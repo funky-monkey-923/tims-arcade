@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+@theme {
+  /* Tim's Arcade palette — neon arcade-cabinet-at-night, not the generic AI cream/terracotta or dark+single-accent look */
+  --color-night: #1a1140;      /* deep indigo background, the "arcade at night" base */
+  --color-night-2: #150c33;    /* darker well, for depth/shadows */
+  --color-violet: #2e1a6b;     /* cabinet panel / card background */
+  --color-violet-2: #3d2585;   /* raised panel / hover */
+  --color-coral: #ff4d8d;      /* hot pink marquee accent — primary */
+  --color-coral-2: #ff2f79;
+  --color-teal: #2ee6d6;       /* electric teal — secondary accent, joystick glow */
+  --color-sun: #ffd43b;        /* coin-yellow — tertiary accent, stars & tokens */
+  --color-lime: #8bff56;       /* go / success green */
+  --color-cloud: #f5f5ff;      /* off-white text on dark */
+  --color-ink: #170f38;        /* text on light chips */
+
+  --font-display: "Baloo 2", "Nunito", system-ui, sans-serif;
+  --font-body: "Nunito", system-ui, sans-serif;
+  --font-pixel: "Press Start 2P", monospace;
+
+  --radius-cabinet: 1.75rem;
+  --shadow-glow-coral: 0 0 24px 2px rgba(255, 77, 141, 0.55);
+  --shadow-glow-teal: 0 0 24px 2px rgba(46, 230, 214, 0.55);
+  --shadow-glow-sun: 0 0 24px 2px rgba(255, 212, 59, 0.55);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: radial-gradient(ellipse at 50% -10%, var(--color-violet-2) 0%, var(--color-night) 55%, var(--color-night-2) 100%);
+    color: var(--color-cloud);
+    font-family: var(--font-body);
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  * {
+    scrollbar-color: var(--color-coral) var(--color-night);
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-sun);
+    outline-offset: 3px;
+    border-radius: 0.5rem;
+  }
+
+  button {
+    font-family: inherit;
+  }
+}
+
+@layer utilities {
+  .font-pixel {
+    font-family: var(--font-pixel);
+  }
+  .text-stroke-ink {
+    -webkit-text-stroke: 3px var(--color-ink);
+    paint-order: stroke fill;
+  }
+}
+
+/* Respect reduced-motion preference across every custom animation */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes bulb-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes coin-hop {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(180deg);
+  }
+}
+
+@keyframes drift-star {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-1000px);
+  }
+}
+
+.animate-bulb-pulse {
+  animation: bulb-pulse 1.4s ease-in-out infinite;
+}
+.animate-coin-hop {
+  animation: coin-hop 0.7s ease-in-out infinite;
+}
