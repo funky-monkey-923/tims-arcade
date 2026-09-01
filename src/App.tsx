@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import { ArcadeProvider, useArcade } from "./context/ArcadeContext";
 import { attachGlobalInput } from "./lib/input";
 import { setReducedMotion } from "./lib/motion";
@@ -174,8 +174,61 @@ function Screens() {
 
 export default function App() {
   return (
-    <ArcadeProvider>
-      <Screens />
-    </ArcadeProvider>
+    <AppErrorBoundary>
+      <ArcadeProvider>
+        <Screens />
+      </ArcadeProvider>
+    </AppErrorBoundary>
   );
+}
+
+interface AppErrorBoundaryState {
+  crashed: boolean;
+}
+
+// GameShell already has its own boundary around each individual game
+// canvas — this is the same idea one level up, around everything else
+// (profile picker, menu, leaderboard, achievements, settings). Without it, a
+// bad value slipping through `isPlausibleState` (e.g. a hand-edited or
+// corrupted backup file restored via Settings > Data) could white-screen
+// the entire arcade with no way back in, since none of those screens read
+// state through anything that can catch its own errors. The reset button is
+// a deliberately blunt escape hatch — it's what actually gets a stuck kid
+// unstuck, at the cost of losing local scores (already-broken data can't be
+// un-broken from inside a crashed React tree).
+class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryState> {
+  state: AppErrorBoundaryState = { crashed: false };
+
+  static getDerivedStateFromError(): AppErrorBoundaryState {
+    return { crashed: true };
+  }
+
+  componentDidCatch(error: unknown): void {
+    console.error("Arcade crashed:", error);
+  }
+
+  render() {
+    if (this.state.crashed) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-night p-6 text-center text-cloud">
+          <p className="font-display font-extrabold text-2xl text-coral">Something went wrong.</p>
+          <p className="text-cloud/70 max-w-sm">
+            The arcade hit an unexpected error — this usually means a corrupted save (e.g. a bad restored backup).
+            Resetting clears all local profiles and scores so it can load again.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.clear();
+              window.location.reload();
+            }}
+            className="rounded-full bg-coral px-6 py-3 font-display font-extrabold text-ink hover:bg-coral-2 transition-colors"
+          >
+            Reset arcade data &amp; reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }

@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { useArcade } from "../context/ArcadeContext";
 import { engine } from "../lib/audio";
 
@@ -51,12 +52,53 @@ function VolumeRow({ label, icon, volume, muted, onVolumeChange, onMuteToggle }:
 // audio mix controls (and, going forward, other app-wide accessibility
 // settings like reduced motion) in one predictable place rather than
 // scattered across screens.
+// A dated, human-recognizable filename (not a UUID/hash) so a downloads
+// folder full of these still reads as "which backup is which" at a glance.
+function backupFilename(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `tims-arcade-backup-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+}
+
 export default function SettingsPanel({ onClose }: SettingsPanelProps) {
-  const { settings, updateSettings } = useArcade();
+  const { settings, updateSettings, exportData, importData } = useArcade();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importMessage, setImportMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+
+  const handleExport = () => {
+    // A plain in-memory Blob URL, not a network round-trip — this app has no
+    // backend, so "download my data" is just "hand back the JSON I already
+    // have," same spirit as saveState() itself.
+    const blob = new Blob([exportData()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = backupFilename();
+    a.click();
+    URL.revokeObjectURL(url);
+    engine.playSfx("select");
+  };
+
+  const handleImportFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = typeof reader.result === "string" ? reader.result : "";
+      const result = importData(text);
+      if (result.ok) {
+        setImportMessage({ kind: "ok", text: "Restored! Your profiles and scores are back." });
+        engine.playSfx("clear");
+      } else {
+        setImportMessage({ kind: "error", text: result.reason });
+        engine.playSfx("back");
+      }
+    };
+    reader.onerror = () => setImportMessage({ kind: "error", text: "Couldn't read that file." });
+    reader.readAsText(file);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-night/80 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-cabinet border-4 border-violet-2 bg-violet p-6">
+      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-cabinet border-4 border-violet-2 bg-violet p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display font-extrabold text-2xl text-sun">⚙️ Settings</h2>
           <button
@@ -114,6 +156,54 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
             className="w-6 h-6 accent-teal shrink-0"
           />
         </label>
+
+        <p className="font-display font-bold text-xs text-cloud/60 uppercase tracking-wide mt-5 mb-1">Data</p>
+        <p className="text-xs text-cloud/50 mb-2">
+          Everything lives only on this device. Download a backup before clearing browser data, switching
+          computers, or just for safekeeping.
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleExport}
+            className="flex-1 rounded-full bg-night/50 border-2 border-violet-2 py-2 font-display font-bold text-sm text-cloud/80 hover:bg-violet-2/40 transition-colors"
+          >
+            ⬇️ Download backup
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex-1 rounded-full bg-night/50 border-2 border-violet-2 py-2 font-display font-bold text-sm text-cloud/80 hover:bg-violet-2/40 transition-colors"
+          >
+            ⬆️ Restore backup
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            aria-label="Choose a backup file to restore"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              // Restoring replaces every profile/score/setting on this
+              // device — a plain confirm() is enough friction for a
+              // destructive, rare, easily-undone-by-re-exporting action
+              // without building a whole custom modal for it.
+              if (file && window.confirm("Restore this backup? It will replace everything currently saved on this device.")) {
+                handleImportFile(file);
+              }
+              e.target.value = ""; // allow re-selecting the same file later
+            }}
+          />
+        </div>
+        {importMessage && (
+          <p
+            className={`text-xs mt-2 font-display font-bold ${importMessage.kind === "ok" ? "text-lime" : "text-coral"}`}
+            role="status"
+          >
+            {importMessage.kind === "ok" ? "✅" : "⚠️"} {importMessage.text}
+          </p>
+        )}
       </div>
     </div>
   );

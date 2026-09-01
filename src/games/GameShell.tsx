@@ -20,6 +20,8 @@ const MUSIC_MOOD_BY_GAME: Partial<Record<GameId, MusicMood>> = {
   racing: "race",
   invaders: "space",
   fighter: "fight",
+  pacman: "maze",
+  snake: "maze",
 };
 
 interface GameErrorBoundaryProps {

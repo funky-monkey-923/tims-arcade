@@ -232,6 +232,47 @@ rest-heavy) for Star Defender and `"fight"` (tense, percussive, minor-key)
 for Rumble Ring — both replace the generic `"action"` mood these two games
 previously shared with every other unassigned game.
 
+## Batch 6 — added 2026-09-01, artistic overhaul of Wiggle Worm / Munch Maze
+
+The smallest batch — only one new sprite. This closes out the "every game
+has had an artistic pass" milestone: all 6 games now have their own
+dedicated music mood and at least some real sprite work, having started
+from a state where only 3 of the 6 did.
+
+### Sprites
+
+| File | From (pack / original name) | Used for |
+|---|---|---|
+| `sprites/pacman-player-body.png` | Shape Characters `yellow_body_circle.png` | Munch Maze — the player's body (a shaded circle with a gradient/highlight baked into the art). The animated chomping mouth is still cut into it at draw time via canvas compositing (`destination-out`), so the classic open/close animation is preserved on top of a less-flat-looking body. |
+
+No sprite in any available pack fits Wiggle Worm's segments — the only
+"snake" art that exists anywhere in these packs is a side-scrolling
+platformer enemy illustration, the wrong shape entirely for a per-cell grid
+body. That game's overhaul is procedural instead: gradient shading and a
+scale-like texture pattern per segment, a redesigned head, and a subtle
+per-segment wiggle so the body reads as slithering rather than a rigid rail
+of rectangles.
+
+### Music
+
+One new mood, `"maze"` (bouncy, staccato, bpm 150) — added to `PATTERNS` in
+`src/lib/audio.ts` and shared by BOTH games (`snake: "maze"`,
+`pacman: "maze"` in `GameShell.tsx`'s `MUSIC_MOOD_BY_GAME`), rather than
+giving each its own mood, since both are light-hearted maze/grid games with
+a similar energy — unlike every other pairing in the app, which each got a
+mood of their own.
+
+## App icons — added 2026-09-01, for PWA installability
+
+`public/icon-192.png`, `public/icon-512.png`, and `public/icon-512-maskable.png`
+are all derived from the app's own existing `public/favicon.svg` mark (the
+purple lightning bolt), not from any third-party pack — rendered at each
+size onto a `--color-night` (`#1a1140`) background so the icon looks
+intentional rather than a logo floating on transparency in an OS icon grid.
+The maskable variant has extra safe-area padding since Android crops
+maskable icons to a circle/squircle. No new licensing to track here; same
+ownership as the existing favicon.
+
 ## Where things live
 
 - `asset-packs/` — the original, unmodified Kenney downloads for all three batches (source of truth for the above; gitignored, ~170MB combined, not shipped)

@@ -1,6 +1,6 @@
 # Tim's Arcade — Complete Overhaul Plan
 
-A planning document only — nothing here has been built yet. It covers the app shell and all 6 games, split into gameplay/mechanics ideas and artistic-overhaul ideas, with a rough sense of how big each change is and what it would touch. Use it to pick what to tackle next; nothing is committed to.
+**Status: the full 5-step sequencing this document laid out has now shipped.** This was written as a planning-only document before any of it was built; it's kept as-is (mostly) for the historical record of the brainstorm, with the items that have since landed marked "✅ SHIPPED" inline rather than rewritten away. Anything not marked shipped is still just an idea, not committed to. It covers the app shell and all 6 games, split into gameplay/mechanics ideas and artistic-overhaul ideas, with a rough sense of how big each change is and what it would touch.
 
 Legend for size: **S** = small, self-contained, a session or less. **M** = medium, touches a few files or one meaningful new system. **L** = large, a new subsystem or a real arc of its own.
 
@@ -16,8 +16,8 @@ The four-tier scoring model (my-last / my-best / overall-best / overall-score), 
 
 ### Additive features
 
-- **Data export/import (backup & restore) — S/M.** Since everything lives in one `localStorage` blob, a "Download my arcade" button that serializes state to JSON, plus an "Import" file picker, is nearly free and fixes the single biggest fragility of this app: clearing browser data currently wipes everything with no way back.
-- **PWA / installability — S.** The app has no network calls and is already local-only, so a manifest + service worker (e.g. via `vite-plugin-pwa`) is close to a drop-in win, especially for "kid plays on a tablet."
+- **Data export/import (backup & restore) — S/M. ✅ SHIPPED** (`src/lib/storage.ts`'s `exportStateJson`/`importStateJson`, wired into Settings).
+- **PWA / installability — S. ✅ SHIPPED** (`vite-plugin-pwa`, see `vite.config.ts`).
 - **First-run onboarding — M.** A one-time "here's how to play" overlay gated on a new flag, shown before the first profile is even created.
 - **Daily challenge / featured game — S.** A deterministic "pick of the day" highlighted on the menu — no new storage needed, pure presentation logic.
 - **Session stats (time played) — S.** Track playtime per session and roll it into profile stats.
@@ -25,7 +25,7 @@ The four-tier scoring model (my-last / my-best / overall-best / overall-score), 
 - **Keyboard-shortcuts overlay — S.** A "?" panel listing the controls, since the vocabulary is already centralized.
 - **Screenshot / share-a-score — S.** Compose the canvas + score text into a downloadable image on game over.
 - **Parent/guardian summary view — S/M.** A read-only screen aggregating stats across all profiles (time played, favorite game) — mostly built from data that already exists.
-- **Cross-game mascot / meta-progression — L.** A leveling mascot or avatar driven by combined play across all games. Appealing, but a genuinely new subsystem — best treated as its own future arc rather than bundled into anything else.
+- **Cross-game mascot / meta-progression — L. ✅ SHIPPED** (scoped down to a level/title/XP-bar readout — see `getMascotProgress` in `src/lib/storage.ts` — rather than a full avatar system, deliberately kept bounded).
 
 ### Modifications to existing systems
 
@@ -114,7 +114,7 @@ Nothing reads as overbuilt — the scope is already lean for a kid-facing app. O
 **Status:** already deep-overhauled gameplay-wise (3 characters, super meter, throws, best-of-3, difficulty-tiered AI). Legitimately deep as a small fighting game already. This is the least visually developed game in the arcade, though — the clearest artistic-overhaul candidate.
 
 **Gameplay & mechanics**
-- No combo system at all — every attack resolves in isolation with no chain/cancel window. Even a minimal 2-hit chain would add real depth and is the single biggest "next level" item — **M/L**.
+- No combo system at all — every attack resolves in isolation with no chain/cancel window. Even a minimal 2-hit chain would add real depth and is the single biggest "next level" item — **M/L. ✅ SHIPPED** (a player-only 2-hit buffered chain, capped, 75% damage on the 2nd hit — see `src/games/fighter/engine.ts`).
 - The stage is completely static — no hazards, no variety round to round — **M**.
 - CPU only has one behavioral profile per difficulty tier (numeric scaling only) — pairing a "personality" (zoner vs. rusher) with each character would add variety cheaply — **M**.
 - Movement is shallow — no dash, no crouch beyond full block, no attack option while jumping — **M**.
@@ -151,7 +151,7 @@ Nothing reads as overbuilt — the scope is already lean for a kid-facing app. O
 **Status:** deep-overhauled gameplay-wise (laps, nitro, crash-penalty system, 3 named rivals). Same situation as Kickoff Clash — new rival-car sprites, roadside scenery sprites, cloud sprites, a start-light gantry sprite, and dedicated crash/boost sound effects plus a "race" music mood were already curated and built, but the render code still draws every rival car as a flat colored box and there's no roadside scenery, sky, or start-light sequence on screen at all.
 
 **Gameplay & mechanics**
-- The track is an endless straight 3-lane road with no curvature at all — the single biggest gameplay gap. A render-time-only curve effect (without touching the actual collision math) is realistic scope — **M**.
+- The track is an endless straight 3-lane road with no curvature at all — the single biggest gameplay gap. A render-time-only curve effect (without touching the actual collision math) is realistic scope — **M. ✅ SHIPPED** (a render-only sinusoidal S-curve, see `curveOffsetAtY` in `src/games/racing/render.ts` — collision/lane math in `engine.ts` untouched, as scoped).
 - No drift mechanic — lane changes are instant snaps — **S/M**.
 - No car customization — only one player skin exists despite other car sprites already being in the asset library — **S/M**.
 - Only one race mode (lap circuit) — a time-trial or elimination mode would reuse most of the existing systems — **M**.

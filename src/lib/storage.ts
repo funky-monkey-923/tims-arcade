@@ -190,16 +190,46 @@ export function loadState(): ArcadeState {
 }
 
 // Guards against malformed-but-valid JSON (hand-edited devtools, a future
-// schema change, corruption) putting non-array/non-object values where the
-// rest of the app assumes an array/object shape — e.g. `deleteProfile`'s
-// `state.profiles.filter(...)` would throw if `profiles` were a string or
-// number. Deliberately shallow: just enough to stop a crash, not a full
-// schema validator.
+// schema change, corruption, or — since this also gates importStateJson —
+// a hand-edited backup file) putting shapes the rest of the app assumes are
+// safe into places that actually render or do arithmetic on them. Started
+// shallow (container types only); extended to check the specific fields
+// that get rendered as JSX children (`profile.name`/`avatar`, which React
+// throws on if they're objects) or have `.toLocaleString()`/arithmetic
+// called on them (`ScoreEntry.value`) — see Leaderboard.tsx's `fmt()` and
+// ProfilePicker/TopBar's `{p.avatar}` — since those crash the WHOLE app
+// (nothing here is wrapped in a per-screen error boundary), not just show a
+// blank value. Still deliberately not a full schema validator: nested
+// history arrays, achievement ids, etc. aren't checked, since a bad value
+// there degrades a single number on screen at worst rather than throwing.
 function isPlausibleState(parsed: unknown): parsed is Partial<ArcadeState> {
   if (!parsed || typeof parsed !== "object") return false;
   const p = parsed as Partial<ArcadeState>;
-  if (p.profiles !== undefined && !Array.isArray(p.profiles)) return false;
-  if (p.scores !== undefined && (typeof p.scores !== "object" || p.scores === null || Array.isArray(p.scores))) return false;
+  if (p.profiles !== undefined) {
+    if (!Array.isArray(p.profiles)) return false;
+    for (const prof of p.profiles) {
+      if (!prof || typeof prof !== "object") return false;
+      const pr = prof as Partial<Profile>;
+      if (typeof pr.id !== "string" || typeof pr.name !== "string" || typeof pr.avatar !== "string") return false;
+    }
+  }
+  if (p.scores !== undefined) {
+    if (typeof p.scores !== "object" || p.scores === null || Array.isArray(p.scores)) return false;
+    for (const game of Object.values(p.scores)) {
+      if (!game || typeof game !== "object") return false;
+      const g = game as Partial<GameScoreRecord>;
+      if (g.byProfile !== undefined) {
+        if (typeof g.byProfile !== "object" || g.byProfile === null || Array.isArray(g.byProfile)) return false;
+        for (const rec of Object.values(g.byProfile)) {
+          if (!rec || typeof rec !== "object") return false;
+          const r = rec as Partial<ProfileScoreRecord>;
+          if (r.best != null && typeof r.best.value !== "number") return false;
+          if (r.last != null && typeof r.last.value !== "number") return false;
+        }
+      }
+      if (g.overallBest != null && typeof g.overallBest.value !== "number") return false;
+    }
+  }
   if (p.activeProfileId !== undefined && p.activeProfileId !== null && typeof p.activeProfileId !== "string") return false;
   if (p.settings !== undefined && (typeof p.settings !== "object" || p.settings === null || Array.isArray(p.settings))) return false;
   if (p.profileStats !== undefined && (typeof p.profileStats !== "object" || p.profileStats === null || Array.isArray(p.profileStats))) return false;
@@ -212,6 +242,65 @@ export function saveState(state: ArcadeState): void {
   } catch {
     // storage unavailable (private mode, quota, etc.) — fail silently, app still works this session
   }
+}
+
+// ---- Backup / restore ---------------------------------------------------
+// Everything this app knows lives in one localStorage key, so clearing
+// browser data (or switching devices) wipes it with no way back. These two
+// functions are the escape hatch — a "download a file, keep it somewhere,
+// load it back later" pair, deliberately as low-tech as the rest of this
+// app's persistence story (no cloud account, no sync service).
+
+const BACKUP_SCHEMA_VERSION = 1;
+
+interface BackupFile {
+  app: "tims-arcade";
+  schemaVersion: number;
+  exportedAt: string;
+  state: ArcadeState;
+}
+
+/** Serializes the current arcade state into a downloadable backup file's contents. */
+export function exportStateJson(state: ArcadeState): string {
+  const backup: BackupFile = {
+    app: "tims-arcade",
+    schemaVersion: BACKUP_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    state,
+  };
+  return JSON.stringify(backup, null, 2);
+}
+
+export type ImportResult = { ok: true; state: ArcadeState } | { ok: false; reason: string };
+
+// Accepts either a full BackupFile (the format exportStateJson produces) or
+// a bare ArcadeState (in case someone hand-edits/re-saves just the state
+// object) — validated the same way loadState validates whatever it reads
+// from localStorage, then merged over fresh defaults so a backup taken
+// before a new settings field existed still fills in a sane value for it,
+// exactly like loadState's own forward-compatibility handling.
+export function importStateJson(json: string): ImportResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return { ok: false, reason: "That file isn't valid JSON." };
+  }
+  const candidate =
+    parsed && typeof parsed === "object" && "state" in (parsed as Record<string, unknown>)
+      ? (parsed as BackupFile).state
+      : (parsed as Partial<ArcadeState>);
+  if (!isPlausibleState(candidate)) {
+    return { ok: false, reason: "That doesn't look like a Tim's Arcade backup file." };
+  }
+  const base = defaultState();
+  const merged: ArcadeState = {
+    ...base,
+    ...candidate,
+    settings: { ...base.settings, ...candidate.settings },
+  };
+  saveState(merged);
+  return { ok: true, state: merged };
 }
 
 export function createProfile(state: ArcadeState, name: string, avatar?: string): ArcadeState {
@@ -462,6 +551,85 @@ export const ACHIEVEMENTS: AchievementMeta[] = [
   { id: "top-player", title: "Top Player", description: "Hold the arcade-best score in any game", icon: "👑" },
   { id: "century", title: "Century Club", description: "Play 100 rounds total", icon: "💯" },
 ];
+
+// ---- Mascot / meta-progression -----------------------------------------
+// A lightweight cross-game "arcade rank" for the active profile: unlike
+// everything else in this file, this has no dedicated stored field at all —
+// like getOverallScore/getUnlockedAchievementIds, it's fully derived from
+// data the app already tracks (ProfileStats + per-game scores + the
+// achievements catalog), so there's nothing new to keep in sync or for a
+// backup/restore to miss. Deliberately scoped small (a level number, a
+// title, an XP bar) rather than a sprawling meta-game system — see
+// OVERHAUL_PLAN.md step 5's brief for "cross-game mascot/meta-progression,
+// keep scope bounded."
+const MASCOT_XP_STEP = 120; // triangular growth base — see totalXpForLevel
+
+// XP a profile needs to have accumulated to REACH `level` (level 1 = 0 XP;
+// each subsequent level costs progressively more, so early levels come
+// quickly — rewarding a new player almost immediately — while later levels
+// are a longer-term grind across many play sessions).
+function totalXpForLevel(level: number): number {
+  return (MASCOT_XP_STEP * level * (level - 1)) / 2;
+}
+
+// Title ladder — sparse on purpose (only the levels where the title
+// actually changes need an entry); getMascotProgress finds the
+// highest-minLevel entry the profile's current level qualifies for.
+const MASCOT_TITLES: { minLevel: number; title: string }[] = [
+  { minLevel: 1, title: "New Arcader" },
+  { minLevel: 3, title: "Regular" },
+  { minLevel: 5, title: "Arcade Enthusiast" },
+  { minLevel: 8, title: "High Roller" },
+  { minLevel: 11, title: "Arcade Master" },
+  { minLevel: 15, title: "Arcade Legend" },
+];
+
+export interface MascotProgress {
+  level: number;
+  title: string;
+  xp: number;
+  /** XP earned within the current level (0 at the moment of leveling up). */
+  xpIntoLevel: number;
+  /** Total XP the current level requires (denominator for a progress bar). */
+  xpForNextLevel: number;
+  /** xpIntoLevel / xpForNextLevel, clamped to [0, 1] — ready to drive a bar's width directly. */
+  progress: number;
+}
+
+function defaultMascotProgress(): MascotProgress {
+  return { level: 1, title: MASCOT_TITLES[0].title, xp: 0, xpIntoLevel: 0, xpForNextLevel: MASCOT_XP_STEP, progress: 0 };
+}
+
+export function getMascotProgress(state: ArcadeState, profileId: string | null): MascotProgress {
+  if (!profileId) return defaultMascotProgress();
+  const stats = getProfileStats(state, profileId);
+  // "Played every game at least once" is worth a lot on purpose — this is
+  // the same breadth-over-depth philosophy as the "World Tour" achievement
+  // and getOverallScore, just folded into the same XP total rather than a
+  // separate stat.
+  const uniqueGamesPlayed = GAMES.reduce((count, g) => count + (state.scores[g.id]?.byProfile?.[profileId] ? 1 : 0), 0);
+  const unlockedCount = getUnlockedAchievementIds(state, profileId).length;
+  const xp =
+    stats.totalPlays * 10 + stats.personalBestBreaks * 15 + uniqueGamesPlayed * 40 + unlockedCount * 60;
+
+  let level = 1;
+  while (xp >= totalXpForLevel(level + 1)) level++;
+
+  const xpAtLevelStart = totalXpForLevel(level);
+  const xpAtNextLevel = totalXpForLevel(level + 1);
+  const xpIntoLevel = xp - xpAtLevelStart;
+  const xpForNextLevel = xpAtNextLevel - xpAtLevelStart;
+  const title = [...MASCOT_TITLES].reverse().find((t) => level >= t.minLevel)?.title ?? MASCOT_TITLES[0].title;
+
+  return {
+    level,
+    title,
+    xp,
+    xpIntoLevel,
+    xpForNextLevel,
+    progress: xpForNextLevel > 0 ? Math.min(1, xpIntoLevel / xpForNextLevel) : 1,
+  };
+}
 
 export function getUnlockedAchievementIds(state: ArcadeState, profileId: string | null): AchievementId[] {
   if (!profileId) return [];

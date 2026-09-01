@@ -1,8 +1,114 @@
 // All CanvasRenderingContext2D calls for Wiggle Worm live here — the "UI"
 // half's rendering concern, kept separate from engine.ts's game rules.
+//
+// Artistic-overhaul pass: the body is now hand-shaded (per-segment gradient +
+// scale banding) rather than flat rects, the whole body slithers with a
+// per-segment sine wiggle, and eating/dying/wave-changes trigger particles,
+// screen shake and slam-in banners. All of that is *cosmetic-only* state —
+// it lives entirely in this module (see the ParticleField/ScreenShake/banner
+// variables below), never in SnakeState, per this app's engine/UI split.
+// GameShell fully unmounts/remounts SnakeGame between runs, but this module
+// stays loaded across that remount, so SnakeGame.tsx calls resetEffects() on
+// every fresh run to avoid leaking a burst/shake/banner from a previous game
+// into the next one.
 
 import { SPRITES, isReady } from "../../lib/sprites";
-import { GRID, type SnakeState } from "./engine";
+import { GRID, type SnakeState, type FoodKind, type Vec } from "./engine";
+import { ParticleField, ScreenShake } from "../../lib/particles";
+import { drawBanner, drawLabel } from "../../lib/canvasText";
+import { motion, scaleForMotion } from "../../lib/motion";
+
+// ---- Cosmetic-only module state -------------------------------------------
+
+const particles = new ParticleField();
+const shake = new ScreenShake();
+
+interface BannerState {
+  text: string;
+  startTs: number;
+  durationMs: number;
+  fill: string;
+}
+let activeBanner: BannerState | null = null;
+
+let lastFrameTs: number | null = null;
+let lastEatTs = -Infinity;
+
+const HEAD_PULSE_MS = 220;
+const BANNER_DURATION_MS = 1300;
+const DEATH_BANNER_DURATION_MS = 900;
+
+function showBanner(text: string, ts: number, durationMs: number, fill: string): void {
+  activeBanner = { text, startTs: ts, durationMs, fill };
+}
+
+/** Called by SnakeGame.tsx from the same `events.score !== undefined` block
+ * where it already plays a food sfx. `x`/`y` are canvas-pixel coordinates of
+ * the food that was just eaten. */
+export function onEat(x: number, y: number, kind: FoodKind, ts: number): void {
+  lastEatTs = ts;
+  if (kind === "golden") {
+    // The rarest, most valuable food gets the biggest, brightest burst.
+    particles.sparks(x, y, 26);
+  } else if (kind === "shrink") {
+    // Reads as "losing" something: cooler color, particles fall away rather
+    // than fly outward.
+    particles.spawn(14, {
+      x, y,
+      spreadX: 4, spreadY: 4,
+      angle: Math.PI / 2,
+      spread: Math.PI / 3,
+      speedMin: 30, speedMax: 100,
+      colors: ["#9b6bff", "#c9a6ff", "#150c33"],
+      lifeMin: 260, lifeMax: 520,
+      sizeMin: 3, sizeMax: 6,
+      gravity: 260,
+      drag: 1.2,
+      shape: "circle",
+    });
+  } else {
+    particles.spawn(10, {
+      x, y,
+      spreadX: 3, spreadY: 3,
+      angle: -Math.PI / 2,
+      spread: Math.PI,
+      speedMin: 40, speedMax: 110,
+      colors: ["#ffd43b", "#fff3b0"],
+      lifeMin: 240, lifeMax: 480,
+      sizeMin: 2, sizeMax: 4,
+      gravity: 70,
+      drag: 1.6,
+      shape: "circle",
+    });
+  }
+}
+
+/** Called by SnakeGame.tsx from the same `events.gameOver !== undefined`
+ * block where it already plays the "hit" sfx. `x`/`y` are the dead head's
+ * canvas-pixel position. */
+export function onDeath(x: number, y: number, ts: number): void {
+  particles.debris(x, y);
+  shake.trigger(10, 260);
+  showBanner("OUCH!", ts, DEATH_BANNER_DURATION_MS, "#ff6b6b");
+}
+
+/** Called by SnakeGame.tsx whenever it notices `state.wave` advanced. */
+export function onWaveChange(wave: number, ts: number): void {
+  showBanner(`WAVE ${wave}!`, ts, BANNER_DURATION_MS, "#ffd43b");
+}
+
+/** Drops all cosmetic-only state. SnakeGame.tsx calls this whenever a fresh
+ * run starts — otherwise a burst/shake/banner from the previous playthrough
+ * would still be live when the new one's first frame draws. */
+export function resetEffects(): void {
+  particles.clear();
+  shake.clear();
+  activeBanner = null;
+  lastFrameTs = null;
+  lastEatTs = -Infinity;
+}
+
+// ---- Small drawing helpers --------------------------------------------------
 
 function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, outerR: number, innerR: number): void {
   const spikes = 5;
@@ -19,10 +125,62 @@ function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, outerR:
   ctx.fill();
 }
 
+interface Rgb {
+  r: number;
+  g: number;
+  b: number;
+}
+
+// Near-head (bright, young-leaf green) to near-tail (deep, shadowed green).
+const BODY_NEAR: Rgb = { r: 139, g: 230, b: 90 };
+const BODY_FAR: Rgb = { r: 46, g: 104, b: 32 };
+const HEAD_RGB: Rgb = { r: 158, g: 255, b: 110 };
+
+function lerpRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  return { r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t };
+}
+
+function shade(rgb: Rgb, amt: number): string {
+  const r = Math.min(255, Math.max(0, Math.round(rgb.r + amt)));
+  const g = Math.min(255, Math.max(0, Math.round(rgb.g + amt)));
+  const b = Math.min(255, Math.max(0, Math.round(rgb.b + amt)));
+  return `rgb(${r},${g},${b})`;
+}
+
+function rgbToCss(rgb: Rgb): string {
+  return `rgb(${Math.round(rgb.r)},${Math.round(rgb.g)},${Math.round(rgb.b)})`;
+}
+
+// Tangent direction of the body at segment `i`, approximated as the vector
+// from the segment behind it to the segment ahead of it (a central
+// difference), so it reads as a smooth curve through corners rather than a
+// sharp per-cell direction flip. Used for both the wiggle's perpendicular
+// axis and the head's snout/eye orientation.
+function segDir(snake: Vec[], i: number): Vec {
+  const len = snake.length;
+  const a = snake[Math.max(i - 1, 0)];
+  const b = snake[Math.min(i + 1, len - 1)];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const mag = Math.hypot(dx, dy) || 1;
+  return { x: dx / mag, y: dy / mag };
+}
+
 export function draw(ctx: CanvasRenderingContext2D, state: SnakeState, ts: number, width: number, height: number): void {
+  const dtMs = lastFrameTs === null ? 16.7 : Math.max(0, ts - lastFrameTs);
+  lastFrameTs = ts;
+  particles.update(dtMs);
+  shake.update(dtMs);
+
   const cell = width / GRID;
 
   ctx.clearRect(0, 0, width, height);
+
+  // Everything in the game world (but not the banner/HUD text below) shakes
+  // together, so an impact reads as the whole arena getting rattled.
+  ctx.save();
+  shake.apply(ctx);
+
   ctx.fillStyle = "#150c33";
   ctx.fillRect(0, 0, width, height);
   ctx.strokeStyle = "rgba(255,255,255,0.04)";
@@ -78,8 +236,12 @@ export function draw(ctx: CanvasRenderingContext2D, state: SnakeState, ts: numbe
     const expiresAt = state.food.expiresAt ?? ts;
     const remaining = Math.max(0, Math.min(1, (expiresAt - ts) / 6000));
     const outerR = cell * 0.46 * (0.6 + 0.4 * remaining) * pulse;
+    ctx.save();
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = "rgba(255,183,3,0.8)";
     ctx.fillStyle = "#ffb703";
     drawStar(ctx, foodX, foodY, outerR, outerR * 0.45);
+    ctx.restore();
   } else if (state.food.kind === "shrink") {
     // shrink food: a downward-pointing triangle with a "minus" glyph —
     // reads as "take something away" at a glance, distinct shape and color
@@ -110,36 +272,147 @@ export function draw(ctx: CanvasRenderingContext2D, state: SnakeState, ts: numbe
     }
   }
 
-  // snake
+  // Continuous trail behind the moving head — subtle, in the body's own
+  // palette, so it reads as "slither residue" rather than a generic effect.
+  if (!state.dead) {
+    const head0 = state.snake[0];
+    particles.trail((head0.x + 0.5) * cell, (head0.y + 0.5) * cell, "rgba(139,230,90,0.5)", 1);
+  }
+
+  // snake — hand-shaded gradient body with a per-segment sine wiggle so it
+  // reads as slithering rather than a rigid rail of tiles. Wiggle amplitude
+  // grows from 0 at the head to a maximum at the tail, matching how a real
+  // snake's undulation is barely visible up front and most pronounced
+  // further back. Purely decorative, so it's zeroed under reduced motion.
+  const wiggleAmpBase = cell * 0.16;
+  const total = state.snake.length;
+  const segPad = 1.5;
+
   state.snake.forEach((seg, i) => {
-    ctx.fillStyle = i === 0 ? "#8bff56" : "#5fce38";
-    const pad = 1.5;
+    if (i === 0) return; // head is drawn separately, below, with its own shape
+    const dir = segDir(state.snake, i);
+    const perp = { x: -dir.y, y: dir.x };
+    const wiggleT = total > 1 ? i / (total - 1) : 0;
+    const amp = scaleForMotion(wiggleAmpBase * wiggleT);
+    const wiggle = amp * Math.sin(ts / 130 - i * 0.85);
+
+    const cx = seg.x * cell + cell / 2 + perp.x * wiggle;
+    const cy = seg.y * cell + cell / 2 + perp.y * wiggle;
+    const size = cell - segPad * 2;
+
+    const t = total > 2 ? (i - 1) / (total - 2) : 0;
+    const base = lerpRgb(BODY_NEAR, BODY_FAR, t);
+
+    const grad = ctx.createLinearGradient(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2);
+    grad.addColorStop(0, shade(base, 45));
+    grad.addColorStop(0.55, rgbToCss(base));
+    grad.addColorStop(1, shade(base, -40));
+
+    ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.roundRect(seg.x * cell + pad, seg.y * cell + pad, cell - pad * 2, cell - pad * 2, 6);
+    ctx.roundRect(cx - size / 2, cy - size / 2, size, size, 6);
     ctx.fill();
+
+    // Scale-like banding: a small darker ellipse on alternating segments,
+    // offset along the perpendicular axis so it reads as texture rather
+    // than a solid stripe.
+    if (i % 2 === 0) {
+      ctx.fillStyle = shade(base, -55);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, size * 0.22, size * 0.14, Math.atan2(dir.y, dir.x), 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
 
-  // The head is only a slightly lighter green than the body today — add a
-  // pair of eyes so which end is "the front" is legible by shape too, not
-  // just a subtle shade difference that's easy to miss at a glance (or for
-  // a color-blind player to not register as different at all).
+  // Head — bigger and shape-distinct from the body (an elongated ellipse
+  // oriented along the direction of travel, i.e. a snout), plus eyes and an
+  // occasional tongue-flick so "which end is the front" is legible even
+  // before the eyes register.
   const head = state.snake[0];
   if (head) {
+    const dir = state.dir.x !== 0 || state.dir.y !== 0 ? state.dir : { x: 1, y: 0 };
+    const angle = Math.atan2(dir.y, dir.x);
     const hx = (head.x + 0.5) * cell;
     const hy = (head.y + 0.5) * cell;
-    const dx = state.dir.x || 0;
-    const dy = state.dir.y || -1;
-    const eyeOffset = cell * 0.16;
+
+    // Squash/stretch: a brief pulse right after eating, decaying back to
+    // normal over HEAD_PULSE_MS. Purely decorative, so reduced motion drops
+    // it to zero rather than merely damping it.
+    const sinceEat = ts - lastEatTs;
+    const pulseT = sinceEat >= 0 && sinceEat < HEAD_PULSE_MS ? 1 - sinceEat / HEAD_PULSE_MS : 0;
+    const pulse2 = scaleForMotion(pulseT * 0.3);
+
+    const radiusAlong = cell * (0.62 + pulse2);
+    const radiusAcross = cell * (0.46 - pulse2 * 0.5);
+
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.rotate(angle);
+    const headGrad = ctx.createLinearGradient(-radiusAlong, -radiusAcross, radiusAlong, radiusAcross);
+    headGrad.addColorStop(0, shade(HEAD_RGB, 40));
+    headGrad.addColorStop(0.6, rgbToCss(HEAD_RGB));
+    headGrad.addColorStop(1, shade(HEAD_RGB, -35));
+    ctx.fillStyle = headGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radiusAlong, radiusAcross, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyes, side-by-side across the direction of travel (in local/rotated
+    // space, that's simply +/-Y).
+    const eyeForward = radiusAlong * 0.35;
+    const eyeSide = radiusAcross * 0.55;
     const eyeR = cell * 0.09;
-    // perpendicular offset so the two eyes sit side-by-side across the
-    // direction of travel, not stacked front-to-back
-    const px = -dy;
-    const py = dx;
     ctx.fillStyle = "#150c33";
     [-1, 1].forEach((side) => {
       ctx.beginPath();
-      ctx.arc(hx + dx * eyeOffset + px * eyeOffset * side, hy + dy * eyeOffset + py * eyeOffset * side, eyeR, 0, Math.PI * 2);
+      ctx.arc(eyeForward, eyeSide * side, eyeR, 0, Math.PI * 2);
       ctx.fill();
     });
+
+    // Tongue flick: a brief forked tongue darting out, on a fixed rhythm so
+    // no extra state is needed — just a modulo on the timestamp. Skipped
+    // entirely under reduced motion (a repeating dart-in-and-out motion is
+    // exactly the kind of small, rapid movement that setting exists to cut).
+    if (!motion.reduced) {
+      const cyclePos = ts % 1700;
+      if (cyclePos < 220) {
+        const flick = Math.sin((cyclePos / 220) * Math.PI); // 0 -> 1 -> 0
+        const tongueLen = radiusAlong * (0.55 + 0.45 * flick);
+        const tipX = radiusAlong + tongueLen;
+        const forkX = radiusAlong + tongueLen * 0.7;
+        const forkSpread = cell * 0.09;
+        ctx.strokeStyle = "#ff5d7a";
+        ctx.lineWidth = Math.max(1, cell * 0.045);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(radiusAlong * 0.9, 0);
+        ctx.lineTo(forkX, 0);
+        ctx.lineTo(tipX, -forkSpread);
+        ctx.moveTo(forkX, 0);
+        ctx.lineTo(tipX, forkSpread);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  particles.draw(ctx);
+
+  ctx.restore(); // end shake-affected world layer
+
+  // HUD + banners — deliberately outside the shake transform so they stay
+  // perfectly legible even while the arena is rattling.
+  drawLabel(ctx, `Wave ${state.wave}`, 10, 20, { size: 13 });
+
+  if (activeBanner) {
+    const elapsed = ts - activeBanner.startTs;
+    if (elapsed > activeBanner.durationMs) {
+      activeBanner = null;
+    } else {
+      drawBanner(ctx, activeBanner.text, width / 2, height / 2, elapsed / activeBanner.durationMs, {
+        fill: activeBanner.fill,
+      });
+    }
   }
 }

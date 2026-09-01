@@ -79,6 +79,14 @@ export function onBlock(x: number, y: number): void {
   shake.trigger(2, 80);
 }
 
+// A confirmed 2-hit combo lands — a brighter/bigger spark burst than a
+// regular onHitLanded, so chaining reads as an extra "pop" without needing
+// its own particle shape.
+export function onComboLanded(x: number, y: number): void {
+  particles.sparks(x, y, 26);
+  shake.trigger(8, 160);
+}
+
 export function onKo(x: number, y: number): void {
   particles.sparks(x, y, 50);
   particles.debris(x, y, 22);

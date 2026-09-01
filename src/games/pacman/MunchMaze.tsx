@@ -3,7 +3,7 @@ import { controls } from "../../lib/input";
 import { engine } from "../../lib/audio";
 import * as mazeEngine from "./engine";
 import type { MazeState } from "./engine";
-import { draw } from "./render";
+import { draw, onGhostEaten, onPlayerCaught, onWaveClear, resetEffects } from "./render";
 import type { GameComponentProps } from "../engineTypes";
 
 // The only React/canvas/DOM-touching file for this game — owns the canvas
@@ -17,6 +17,7 @@ export default function MunchMaze({ width, height, paused, onScoreUpdate, onGame
 
   useEffect(() => {
     stateRef.current = mazeEngine.createState(width, height);
+    resetEffects();
   }, [width, height]);
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -38,6 +39,13 @@ export default function MunchMaze({ width, height, paused, onScoreUpdate, onGame
       if (!state) return;
 
       if (!paused) {
+        // Snapshotted before step() mutates state, so the trigger calls below
+        // can report *where* a cosmetic event happened even though step()
+        // only reports *that* it happened (see MazeEvents in engine.ts).
+        const prevPlayerR = state.player.r;
+        const prevPlayerC = state.player.c;
+        const prevGhosts = state.ghosts.map((g) => ({ r: g.r, c: g.c, startR: g.startR, startC: g.startC }));
+
         const events = mazeEngine.step(
           state,
           { moveUp: controls.moveUp, moveDown: controls.moveDown, moveLeft: controls.moveLeft, moveRight: controls.moveRight, primaryAction: controls.primaryAction, secondaryAction: controls.secondaryAction, pointer: controls.pointer },
@@ -48,11 +56,29 @@ export default function MunchMaze({ width, height, paused, onScoreUpdate, onGame
         if (events.ateDot) engine.playSfx("move");
         else if (events.atePower) engine.playSfx("powerup");
         else if (events.wonWave) engine.playSfx("clear");
-        else if (events.ateGhost) engine.playSfx("coin");
+        else if (events.ateGhost) engine.playSfx("shoot");
         else if (events.ateFruit) engine.playSfx("coin");
-        else if (events.ateSpeedPellet) engine.playSfx("powerup");
+        else if (events.ateSpeedPellet) engine.playSfx("boost");
         if (events.hitGhost) engine.playSfx("hit");
         if (events.gameOver !== undefined) onGameOver(events.gameOver);
+
+        if (events.ateGhost) {
+          // Find the ghost that was sitting on the player's previous cell
+          // (the collision point — an eat can only happen there) and has
+          // since moved away (teleported back to its own start). Matching on
+          // "was at the collision point" rather than "has left its own start
+          // cell" correctly identifies a ghost eaten before it ever left
+          // spawn, which the old heuristic missed and mis-attributed to the
+          // player's own tile.
+          const justRespawned = prevGhosts.find(
+            (pg, i) => pg.r === prevPlayerR && pg.c === prevPlayerC && (state.ghosts[i].r !== pg.r || state.ghosts[i].c !== pg.c)
+          );
+          const startR = justRespawned?.startR ?? prevPlayerR;
+          const startC = justRespawned?.startC ?? prevPlayerC;
+          onGhostEaten(prevPlayerR, prevPlayerC, startR, startC);
+        }
+        if (events.hitGhost) onPlayerCaught(prevPlayerR, prevPlayerC);
+        if (events.wonWave) onWaveClear(ts);
       }
 
       draw(ctx!, state, ts, width, height);

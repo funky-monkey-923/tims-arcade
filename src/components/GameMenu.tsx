@@ -22,7 +22,8 @@ const GLOW_COLOR: Record<AccentColor, string> = {
 };
 
 export default function GameMenu({ onPlay, onLeaderboard, onAchievements, onSwitchProfile }: GameMenuProps) {
-  const { games, activeProfile, unlockedAchievementIds, achievements, profileStats, recentHighlights, settings } = useArcade();
+  const { games, activeProfile, unlockedAchievementIds, achievements, profileStats, recentHighlights, settings, mascotProgress } =
+    useArcade();
   const columns = () => (window.innerWidth >= 1024 ? 3 : window.innerWidth >= 640 ? 2 : 1);
   const idle = useIdle(15000);
 
@@ -72,10 +73,33 @@ export default function GameMenu({ onPlay, onLeaderboard, onAchievements, onSwit
           {activeProfile ? `Pick a game, ${activeProfile.name}!` : "Pick a game to play!"}
         </p>
         {activeProfile && (
-          <p className="font-pixel text-[9px] text-cloud/40 mb-8 text-center">
+          <p className="font-pixel text-[9px] text-cloud/40 mb-3 text-center">
             🎮 {profileStats.totalPlays} PLAYED · 🔥 {profileStats.currentStreak}-DAY STREAK · 🎖️{" "}
             {unlockedAchievementIds.length}/{achievements.length} BADGES
           </p>
+        )}
+        {/* Cross-game "arcade rank" — a small level/title/XP readout, not a
+            full screen of its own (kept deliberately bounded per the
+            overhaul plan). XP is derived live from stats already tracked
+            elsewhere (plays, PBs, breadth, badges), so this can never drift
+            out of sync with them. */}
+        {activeProfile && (
+          <div className="w-full max-w-xs mb-8">
+            <div className="flex items-center justify-between font-pixel text-[9px] text-cloud/60 mb-1">
+              <span>
+                ⭐ LV.{mascotProgress.level} · {mascotProgress.title.toUpperCase()}
+              </span>
+              <span>
+                {mascotProgress.xpIntoLevel}/{mascotProgress.xpForNextLevel} XP
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-violet/60 overflow-hidden">
+              <div
+                className="h-full bg-sun transition-[width] duration-500"
+                style={{ width: `${Math.round(mascotProgress.progress * 100)}%` }}
+              />
+            </div>
+          </div>
         )}
         {!activeProfile && <div className="mb-8" />}
 

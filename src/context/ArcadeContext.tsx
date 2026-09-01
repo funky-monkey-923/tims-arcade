@@ -6,6 +6,8 @@ import {
   setActiveProfile as setActiveProfileFn,
   setSettings as setSettingsFn,
   recordScore as recordScoreFn,
+  exportStateJson,
+  importStateJson,
   getGameStats,
   getProfile,
   getOverallScore,
@@ -13,6 +15,7 @@ import {
   getProfileStats,
   getUnlockedAchievementIds,
   getRecentHighlights,
+  getMascotProgress,
   ACHIEVEMENTS,
   GAMES,
   MAX_PROFILES,
@@ -26,6 +29,8 @@ import {
   type AchievementId,
   type AchievementMeta,
   type HighlightEntry,
+  type ImportResult,
+  type MascotProgress,
 } from "../lib/storage";
 import { engine } from "../lib/audio";
 
@@ -56,6 +61,16 @@ interface ArcadeContextValue {
   unlockedAchievementIds: AchievementId[];
   /** Recent activity across every profile, newest first — for the menu's attract-mode ticker. */
   recentHighlights: HighlightEntry[];
+  /** Active profile's cross-game arcade rank (level/title/XP bar) — derived, not stored. Zeroed if no active profile. */
+  mascotProgress: MascotProgress;
+  /** Serializes everything (profiles, scores, settings) into a downloadable backup file's contents. */
+  exportData: () => string;
+  /**
+   * Restores state from a previously-exported backup file's contents.
+   * Replaces the whole app state on success — the caller should confirm
+   * with the user first, since this can't be undone.
+   */
+  importData: (json: string) => ImportResult;
 }
 
 const ArcadeCtx = createContext<ArcadeContextValue | null>(null);
@@ -83,20 +98,35 @@ export function ArcadeProvider({ children }: { children: ReactNode }) {
     });
   }, []);
   const recordScore = useCallback(
-    // Computes the next state directly (rather than via the setState-updater
-    // form) so it can synchronously return the freshly-computed GameStats to
-    // the caller. GameShell needs this same-tick, e.g. to decide whether this
-    // run just set a new high score — reading `state` via a separate
-    // `statsFor()` call right after `recordScore()` would still see the
-    // pre-write snapshot, since React state updates aren't applied until the
-    // next render.
+    // Uses the setState-updater form (like every other mutator here) rather
+    // than reading the `state` closure directly — React threads multiple
+    // synchronous setState-with-a-function calls through in order, each
+    // seeing the previous one's result, even before any re-render happens.
+    // That's what makes this safe against two same-tick calls (e.g. a game
+    // engine bug double-firing onGameOver): the second call still sees the
+    // first one's write, instead of both computing off the same stale
+    // snapshot and one clobbering the other. The synchronous `GameStats`
+    // return value (which GameShell needs same-tick, e.g. to know whether
+    // this run just set a new high score) is captured via the closure
+    // variable below, since the updater's return value only reaches React
+    // itself, not this function's caller.
     (gameId: GameId, value: number): GameStats => {
-      if (!state.activeProfileId) return getGameStats(state, gameId, state.activeProfileId);
-      const nextState = recordScoreFn(state, gameId, state.activeProfileId, value);
-      setState(nextState);
-      return getGameStats(nextState, gameId, state.activeProfileId);
+      let result: GameStats | undefined;
+      setState((current) => {
+        if (!current.activeProfileId) {
+          result = getGameStats(current, gameId, current.activeProfileId);
+          return current;
+        }
+        const nextState = recordScoreFn(current, gameId, current.activeProfileId, value);
+        result = getGameStats(nextState, gameId, current.activeProfileId);
+        return nextState;
+      });
+      // Non-null: the updater above always assigns `result` before
+      // returning, on every branch — TS just can't see that through the
+      // setState callback boundary.
+      return result!;
     },
-    [state]
+    []
   );
   const statsFor = useCallback((gameId: GameId) => getGameStats(state, gameId, state.activeProfileId), [state]);
   const overallScore = useMemo(() => getOverallScore(state, state.activeProfileId), [state]);
@@ -104,28 +134,61 @@ export function ArcadeProvider({ children }: { children: ReactNode }) {
   const profileStats = useMemo(() => getProfileStats(state, state.activeProfileId), [state]);
   const unlockedAchievementIds = useMemo(() => getUnlockedAchievementIds(state, state.activeProfileId), [state]);
   const recentHighlights = useMemo(() => getRecentHighlights(state), [state]);
+  const mascotProgress = useMemo(() => getMascotProgress(state, state.activeProfileId), [state]);
+  const exportData = useCallback(() => exportStateJson(state), [state]);
+  const importData = useCallback((json: string): ImportResult => {
+    const result = importStateJson(json);
+    if (result.ok) setState(result.state);
+    return result;
+  }, []);
 
-  const value: ArcadeContextValue = {
-    profiles: state.profiles,
-    activeProfile,
-    activeProfileId: state.activeProfileId,
-    settings: state.settings,
-    updateSettings,
-    toggleMuted,
-    games: GAMES,
-    maxProfiles: MAX_PROFILES,
-    createProfile,
-    deleteProfile,
-    selectProfile,
-    recordScore,
-    statsFor,
-    overallScore,
-    overallScoreboard,
-    profileStats,
-    achievements: ACHIEVEMENTS,
-    unlockedAchievementIds,
-    recentHighlights,
-  };
+  const value: ArcadeContextValue = useMemo(
+    () => ({
+      profiles: state.profiles,
+      activeProfile,
+      activeProfileId: state.activeProfileId,
+      settings: state.settings,
+      updateSettings,
+      toggleMuted,
+      games: GAMES,
+      maxProfiles: MAX_PROFILES,
+      createProfile,
+      deleteProfile,
+      selectProfile,
+      recordScore,
+      statsFor,
+      overallScore,
+      overallScoreboard,
+      profileStats,
+      achievements: ACHIEVEMENTS,
+      unlockedAchievementIds,
+      recentHighlights,
+      mascotProgress,
+      exportData,
+      importData,
+    }),
+    [
+      state.profiles,
+      activeProfile,
+      state.activeProfileId,
+      state.settings,
+      updateSettings,
+      toggleMuted,
+      createProfile,
+      deleteProfile,
+      selectProfile,
+      recordScore,
+      statsFor,
+      overallScore,
+      overallScoreboard,
+      profileStats,
+      unlockedAchievementIds,
+      recentHighlights,
+      mascotProgress,
+      exportData,
+      importData,
+    ]
+  );
 
   return <ArcadeCtx.Provider value={value}>{children}</ArcadeCtx.Provider>;
 }

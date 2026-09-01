@@ -5,6 +5,7 @@ import { drawShadow, SPRITES, isReady, OBSTACLE_CAR_SPRITES, RIVAL_CAR_SPRITES, 
 import { LANES, NITRO_COOLDOWN, laneX, getPlayerPosition, type RacingState } from "./engine";
 import { ParticleField, ScreenShake } from "../../lib/particles";
 import { drawLabel, drawBanner, drawOutlinedText } from "../../lib/canvasText";
+import { scaleForMotion } from "../../lib/motion";
 
 // Screen pixels per unit of distance-gap between the player and an AI
 // racer. Tuned so racers within roughly a second's worth of pace
@@ -18,6 +19,53 @@ const AI_GAP_SCALE = 0.4;
 // this one duration to animate the banner it's told to show). Keep in sync
 // if the engine's value ever changes.
 const LAP_BANNER_MS = 2000;
+
+// --- Track curvature (visual only) -----------------------------------------
+// A slow, lazy S-curve applied purely at render time — the road surface,
+// lane-divider lines, obstacles, AI cars, the player car, and roadside
+// scenery all get the same horizontal offset added at their own y-position,
+// so none of this touches engine.ts's actual lane/collision math: everything
+// just gets bent sideways together, in lockstep, as pure decoration.
+//
+// Driven off state.distance (not ts/rAF), same reasoning as SKY_DRIFT_FACTOR
+// above: it must freeze correctly whenever the race itself is frozen
+// (paused/countdown/finished) rather than drifting as "free" decoration
+// while everything else holds.
+const CURVE_FREQUENCY = 0.0013; // radians per distance-unit — a full
+// left-right-left cycle roughly every ~4800 distance-units, i.e. a bit over
+// two full S-bends across an ~15000-unit lap at cruising speed: noticeable
+// without being frantic.
+const CURVE_Y_SPAN = 1.1; // radians of extra phase spanned from the top of
+// the screen (y=0) to the bottom (y=height). This — not the distance term
+// alone — is what actually sells "the road bends" rather than "the screen
+// shifts sideways": a point near the player's own car (large y) and a point
+// near the horizon (small y) at the same instant sit at different phases of
+// the sine, so lane lines and objects at different depths get visibly
+// different offsets, exactly like a real curve receding into the distance.
+const CURVE_AMPLITUDE_FRACTION = 0.07; // max horizontal displacement, as a
+// fraction of track width, at the extremes of the curve (~7%, inside the
+// 5-10%-of-track-width ballpark from the design brief).
+
+/**
+ * Purely cosmetic horizontal offset for whatever's being drawn at screen-
+ * space `y`, given the race's current distance. Every caller in this file
+ * (road bands, lane dividers, obstacles, AI cars, the player car, roadside
+ * scenery) samples this at its own y so everything bends together and still
+ * lines up within its lane on the curved road.
+ *
+ * Takes the already-resolved `amplitude` (see `scaleForMotion` at each
+ * frame's one call site in `draw()`/`drawShoulderScenery`) rather than
+ * recomputing it itself — this function is called 150+ times in a single
+ * frame (every road band + lane-divider sample + obstacle + car), and
+ * `scaleForMotion` only depends on `width` and the reduced-motion flag,
+ * neither of which changes mid-frame, so recomputing it per-sample was pure
+ * waste.
+ */
+function curveOffsetAtY(amplitude: number, distance: number, y: number, height: number): number {
+  if (amplitude === 0) return 0;
+  const phase = distance * CURVE_FREQUENCY + (y / height) * CURVE_Y_SPAN;
+  return Math.sin(phase) * amplitude;
+}
 
 // Cosmetic-only module state — screen shake/particles are pure visual
 // flourish with no gameplay meaning (see lib/particles.ts's file comment),
@@ -82,7 +130,7 @@ function drawSceneryItem(ctx: CanvasRenderingContext2D, sprite: HTMLImageElement
   ctx.drawImage(sprite, cx - w / 2, groundY - h, w, h);
 }
 
-function drawShoulderScenery(ctx: CanvasRenderingContext2D, state: RacingState, width: number, height: number, margin: number): void {
+function drawShoulderScenery(ctx: CanvasRenderingContext2D, state: RacingState, width: number, height: number, margin: number, curveAmplitude: number): void {
   const spacing = height * SCENERY_SPACING_FACTOR;
   const kCenter = -state.distance / spacing;
   const kMin = Math.floor(kCenter - height / spacing - 1);
@@ -92,12 +140,16 @@ function drawShoulderScenery(ctx: CanvasRenderingContext2D, state: RacingState, 
   for (let k = kMin; k <= kMax; k++) {
     const y = state.distance + k * spacing;
     if (y < -120 || y > height + 40) continue;
+    // Roadside scenery is drawn outside the road's scale/translate
+    // transform (see draw() below), so it samples the same curve offset
+    // directly in canvas space rather than through that transform.
+    const curveOffset = curveOffsetAtY(curveAmplitude, state.distance, y, height);
 
     const leftIdx = Math.abs(k * SCENERY_STRIDE) % ROADSIDE_SPRITES.length;
-    drawSceneryItem(ctx, ROADSIDE_SPRITES[leftIdx], margin * 0.5, y, itemW);
+    drawSceneryItem(ctx, ROADSIDE_SPRITES[leftIdx], margin * 0.5 + curveOffset, y, itemW);
 
     const rightIdx = Math.abs(k * SCENERY_STRIDE + 3) % ROADSIDE_SPRITES.length;
-    drawSceneryItem(ctx, ROADSIDE_SPRITES[rightIdx], width - margin * 0.5, y, itemW);
+    drawSceneryItem(ctx, ROADSIDE_SPRITES[rightIdx], width - margin * 0.5 + curveOffset, y, itemW);
   }
 }
 
@@ -219,6 +271,10 @@ export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: numb
   // pixels move; no gameplay math changes.
   const margin = width * 0.11;
   const roadScale = (width - margin * 2) / width;
+  // Computed once per frame (see curveOffsetAtY's own comment for why) and
+  // threaded through every call site below instead of each one re-deriving
+  // it from `width`/reduced-motion.
+  const curveAmplitude = scaleForMotion(width * CURVE_AMPLITUDE_FRACTION);
 
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#1a1140";
@@ -228,7 +284,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: numb
   shake.apply(ctx);
 
   drawSky(ctx, state, width, height);
-  drawShoulderScenery(ctx, state, width, height, margin);
+  drawShoulderScenery(ctx, state, width, height, margin, curveAmplitude);
 
   ctx.save();
   ctx.translate(margin, 0);
@@ -240,20 +296,44 @@ export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: numb
   ctx.fillRect(0, 0, width * 0.02, height);
   ctx.fillRect(width * 0.98, 0, width * 0.02, height);
 
+  // Only the two edge stripes are redrawn per band, not the whole-width road
+  // body: the body color is uniform, so the flat, un-offset fill just above
+  // already covers it correctly everywhere except the thin sliver right at
+  // each curved edge — and that sliver is exactly where the (offset) edge
+  // stripe below gets redrawn on top anyway. Re-filling the full-width body
+  // per band used to triple this loop's fillRect count for no visual
+  // difference; skipping it cuts this hot loop by a third.
+  const bandH = Math.max(4, height / 60);
+  for (let y = 0; y < height; y += bandH) {
+    const off = curveOffsetAtY(curveAmplitude, state.distance, y + bandH / 2, height);
+    const h = Math.min(bandH + 1, height - y + 1);
+    ctx.fillStyle = "#150c33";
+    ctx.fillRect(off, y, width * 0.02, h);
+    ctx.fillRect(off + width * 0.98, y, width * 0.02, h);
+  }
+
   ctx.strokeStyle = "rgba(255,255,255,0.6)";
   ctx.lineWidth = 3;
   ctx.setLineDash([height * 0.09, height * 0.08]);
+  const CURVE_LANE_SAMPLES = 24; // points sampled per lane-divider polyline —
+  // a single straight moveTo/lineTo can't visually curve, so each divider is
+  // drawn as a short polyline through several y-sampled points instead.
   for (let l = 1; l < LANES; l++) {
     ctx.beginPath();
     ctx.lineDashOffset = -state.roadOffset;
-    ctx.moveTo((width / LANES) * l, 0);
-    ctx.lineTo((width / LANES) * l, height);
+    const baseX = (width / LANES) * l;
+    for (let s = 0; s <= CURVE_LANE_SAMPLES; s++) {
+      const y = (height * s) / CURVE_LANE_SAMPLES;
+      const x = baseX + curveOffsetAtY(curveAmplitude, state.distance, y, height);
+      if (s === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
     ctx.stroke();
   }
   ctx.setLineDash([]);
 
   state.obstacles.forEach((o) => {
-    const ox = laneX(width, o.lane);
+    const ox = laneX(width, o.lane) + curveOffsetAtY(curveAmplitude, state.distance, o.y, height);
     drawShadow(ctx, ox, o.y + carH / 2 - 2, carW * 1.1);
     const sprite = OBSTACLE_CAR_SPRITES[o.spriteIndex % OBSTACLE_CAR_SPRITES.length];
     if (isReady(sprite)) {
@@ -268,9 +348,9 @@ export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: numb
 
   const carY = height * 0.78;
   state.aiRacers.forEach((ai, i) => {
-    const ax = laneX(width, ai.lane);
     const gap = ai.distance - state.distance; // positive = ahead of player
     const ay = carY - gap * AI_GAP_SCALE;
+    const ax = laneX(width, ai.lane) + curveOffsetAtY(curveAmplitude, state.distance, ay, height);
     if (ay > -carH && ay < height + carH) {
       drawShadow(ctx, ax, ay + carH / 2 - 2, carW * 1.1);
       const sprite = RIVAL_CAR_SPRITES[i % RIVAL_CAR_SPRITES.length];
@@ -290,53 +370,61 @@ export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: numb
       // cue this game already had, restyled but not removed.
       const atTop = gap > 0;
       const edgeY = atTop ? 30 : height - 18;
+      // Recomputed at the indicator's actual on-screen y (rather than reusing
+      // the far-off-screen `ax`/`ay` above) so the ping sits at the same
+      // curve offset as the road edge it's pinned to.
+      const pingX = laneX(width, ai.lane) + curveOffsetAtY(curveAmplitude, state.distance, edgeY, height);
       ctx.fillStyle = ai.color;
       ctx.beginPath();
       if (atTop) {
-        ctx.moveTo(ax, edgeY - 7);
-        ctx.lineTo(ax - 7, edgeY + 7);
-        ctx.lineTo(ax + 7, edgeY + 7);
+        ctx.moveTo(pingX, edgeY - 7);
+        ctx.lineTo(pingX - 7, edgeY + 7);
+        ctx.lineTo(pingX + 7, edgeY + 7);
       } else {
-        ctx.moveTo(ax, edgeY + 7);
-        ctx.lineTo(ax - 7, edgeY - 7);
-        ctx.lineTo(ax + 7, edgeY - 7);
+        ctx.moveTo(pingX, edgeY + 7);
+        ctx.lineTo(pingX - 7, edgeY - 7);
+        ctx.lineTo(pingX + 7, edgeY - 7);
       }
       ctx.closePath();
       ctx.fill();
-      drawLabel(ctx, ai.name, ax, atTop ? edgeY + 18 : edgeY - 11, { align: "center", size: 11 });
+      drawLabel(ctx, ai.name, pingX, atTop ? edgeY + 18 : edgeY - 11, { align: "center", size: 11 });
     }
   });
 
   const nitroActive = ts < state.nitroUntil;
+  // Player car's curve offset, sampled once at its fixed screen row (carY),
+  // and reused for the shadow/trail/nitro-overlay/sprite below so they all
+  // move together rather than drifting apart.
+  const playerX = state.x + curveOffsetAtY(curveAmplitude, state.distance, carY, height);
   if (nitroActive) {
     // Continuous flame trail behind the player car — spawned every frame
     // nitro is active (see onNitro() above for the one-shot activation
     // burst). Two colors interleaved so the trail reads as fire rather than
     // a single flat-colored smear.
     const flameY = height * 0.78 + carH * 0.42;
-    particles.trail(state.x - carW * 0.15, flameY, "#ffd43b", 2);
-    particles.trail(state.x + carW * 0.15, flameY, "#ff9e3d", 2);
+    particles.trail(playerX - carW * 0.15, flameY, "#ffd43b", 2);
+    particles.trail(playerX + carW * 0.15, flameY, "#ff9e3d", 2);
   }
-  drawShadow(ctx, state.x, height * 0.78 + carH / 2 - 2, carW * 1.1);
+  drawShadow(ctx, playerX, height * 0.78 + carH / 2 - 2, carW * 1.1);
   if (nitroActive) {
     ctx.fillStyle = "rgba(255,212,59,0.5)";
-    ctx.fillRect(state.x - carW / 2, height * 0.78 + carH / 2, carW, height * 0.08);
+    ctx.fillRect(playerX - carW / 2, height * 0.78 + carH / 2, carW, height * 0.08);
   }
   if (isReady(SPRITES.carPlayer)) {
-    ctx.drawImage(SPRITES.carPlayer, state.x - carW / 2, height * 0.78 - carH / 2, carW, carH);
+    ctx.drawImage(SPRITES.carPlayer, playerX - carW / 2, height * 0.78 - carH / 2, carW, carH);
     if (nitroActive) {
       ctx.save();
       ctx.globalAlpha = 0.35;
       ctx.fillStyle = "#ffd43b";
       ctx.beginPath();
-      ctx.roundRect(state.x - carW / 2, height * 0.78 - carH / 2, carW, carH, 8);
+      ctx.roundRect(playerX - carW / 2, height * 0.78 - carH / 2, carW, carH, 8);
       ctx.fill();
       ctx.restore();
     }
   } else {
     ctx.fillStyle = nitroActive ? "#ffd43b" : "#2ee6d6";
     ctx.beginPath();
-    ctx.roundRect(state.x - carW / 2, height * 0.78 - carH / 2, carW, carH, 8);
+    ctx.roundRect(playerX - carW / 2, height * 0.78 - carH / 2, carW, carH, 8);
     ctx.fill();
   }
 

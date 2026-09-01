@@ -97,8 +97,8 @@ export default function Leaderboard({ onBack }: LeaderboardProps) {
               </div>
             </div>
             <div className="grid gap-2">
-              {sortedScoreboard.map((entry) => (
-                <ChampionRow key={entry.profile.id} entry={entry} rank={overallScoreboard.indexOf(entry)} />
+              {sortedScoreboard.map((entry, i) => (
+                <ChampionRow key={entry.profile.id} entry={entry} rank={sortMode === "score" ? i : overallScoreboard.indexOf(entry)} />
               ))}
             </div>
           </div>

@@ -3,7 +3,7 @@ import { controls } from "../../lib/input";
 import { engine } from "../../lib/audio";
 import * as snakeEngine from "./engine";
 import type { SnakeState } from "./engine";
-import { draw } from "./render";
+import { draw, onEat, onDeath, onWaveChange, resetEffects } from "./render";
 import type { GameComponentProps } from "../engineTypes";
 
 // The only React/canvas/DOM-touching file for this game — owns the canvas
@@ -18,9 +18,17 @@ export default function SnakeGame({ width, height, paused, onScoreUpdate, onGame
   // ("move") samples only turn the snake while actively dragging rather than
   // on every incidental pointer move over the element.
   const isDraggingRef = useRef(false);
+  // Tracks the last wave seen so a wave-change banner/sfx fires exactly once
+  // per transition, not once per frame it happens to still be the new wave.
+  const prevWaveRef = useRef(1);
 
   useEffect(() => {
     stateRef.current = snakeEngine.createState(width);
+    prevWaveRef.current = 1;
+    // GameShell fully unmounts/remounts this component between playthroughs,
+    // but render.ts's particles/shake/banner state lives at module scope and
+    // would otherwise leak from the previous run into this fresh one.
+    resetEffects();
   }, [width]);
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -56,6 +64,14 @@ export default function SnakeGame({ width, height, paused, onScoreUpdate, onGame
       if (!state) return;
 
       if (!paused) {
+        // Captured before step() mutates state: if this tick eats food,
+        // state.food is respawned in-place, so the kind/position of what was
+        // actually eaten has to be read beforehand.
+        const cell = width / snakeEngine.GRID;
+        const eatenKind = state.food.kind;
+        const eatenX = (state.food.x + 0.5) * cell;
+        const eatenY = (state.food.y + 0.5) * cell;
+
         const events = snakeEngine.step(
           state,
           { moveUp: controls.moveUp, moveDown: controls.moveDown, moveLeft: controls.moveLeft, moveRight: controls.moveRight, primaryAction: controls.primaryAction, secondaryAction: controls.secondaryAction, pointer: controls.pointer },
@@ -64,9 +80,20 @@ export default function SnakeGame({ width, height, paused, onScoreUpdate, onGame
         );
         if (events.score !== undefined) {
           onScoreUpdate(events.score);
-          engine.playSfx("coin");
+          onEat(eatenX, eatenY, eatenKind, ts);
+          if (eatenKind === "golden") engine.playSfx("powerup");
+          else if (eatenKind === "shrink") engine.playSfx("back");
+          else engine.playSfx("coin");
+        }
+        if (state.wave !== prevWaveRef.current) {
+          prevWaveRef.current = state.wave;
+          onWaveChange(state.wave, ts);
+          engine.playSfx("clear");
         }
         if (events.gameOver !== undefined) {
+          const headX = (state.snake[0].x + 0.5) * cell;
+          const headY = (state.snake[0].y + 0.5) * cell;
+          onDeath(headX, headY, ts);
           engine.playSfx("hit");
           onGameOver(events.gameOver);
         }

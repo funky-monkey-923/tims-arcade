@@ -309,14 +309,15 @@ export function onPointer(state: MazeState, action: PointerAction): void {
   state.player.nextDir = Math.abs(dx) > Math.abs(dy) ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) };
 }
 
-// A late-activator ghost stays wanderer-like early so each wave has a
-// "safe" opening window, then switches on for the rest of the wave — either
-// once the player's made real progress on the current wave's dots, or
-// automatically from wave 2 onward (so it doesn't feel identical to the
-// wanderer forever).
+// A late-activator ghost stays docile early so EVERY wave (not just the
+// first) has a genuine "safe" opening window, then switches on once the
+// player's made real progress on the current wave's dots. Previously this
+// also flipped unconditionally from wave 2 onward, which meant the
+// advertised "safe opening" only ever existed on wave 1 — fixed so the
+// dots-eaten threshold is the only gate, every wave.
 function isLateActivatorAwake(state: MazeState): boolean {
   const threshold = Math.max(5, Math.floor(state.initialDotCount / 2));
-  return state.wave > 1 || state.dotsEatenThisWave >= threshold;
+  return state.dotsEatenThisWave >= threshold;
 }
 
 function ghostChaseProbability(g: Ghost, state: MazeState): number {
@@ -326,9 +327,14 @@ function ghostChaseProbability(g: Ghost, state: MazeState): number {
     case "ambusher":
       return 0.75;
     case "wanderer":
-      return 0.15;
+      return 0.25;
     case "lateActivator":
-      return isLateActivatorAwake(state) ? 0.85 : 0.15;
+      // Distinct from wanderer's 0.25 in both states: noticeably more docile
+      // while dormant (0.05 — barely chases at all), then noticeably more
+      // aggressive than even the chaser's baseline once awake (0.9 here ties
+      // chaser, but combined with the ambush-free target function below it
+      // still reads as a different ghost).
+      return isLateActivatorAwake(state) ? 0.9 : 0.05;
     default:
       return 0.3;
   }

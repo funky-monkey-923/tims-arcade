@@ -85,7 +85,7 @@ export type SfxName =
   // shared
   | "countdown"
   | "fanfare";
-export type MusicMood = "menu" | "action" | "sports" | "race" | "space" | "fight";
+export type MusicMood = "menu" | "action" | "sports" | "race" | "space" | "fight" | "maze";
 export type AnnouncerName =
   | "ready"
   | "gameover"
@@ -279,6 +279,21 @@ const PATTERNS: Record<MusicMood, Pattern> = {
     lead: [
       "E5", null, "G5", null, "E5", null, "B4", null,
       "E5", null, "G5", null, "Fs5", null, "E5", null,
+    ],
+  },
+  // Munch Maze / Wiggle Worm: a playful, skittering chase feel rather than
+  // the driving rock energy of "action" — bouncy staccato bass (mostly
+  // detached 8ths with rests, so it scurries instead of marching) under a
+  // lead that hops around a minor-pentatonic-ish shape, echoing "something
+  // is chasing you through a maze" without being tense/scary like "space" or
+  // "fight". Shared between both games rather than split into two moods,
+  // since neither wants a musical identity distinct from the other.
+  maze: {
+    bpm: 150,
+    bass: ["C3", null, "C3", null, "G2", null, "G2", null, "A2", null, "A2", null, "F2", null, "G2", null],
+    lead: [
+      "E5", "G5", "E5", "C5", "D5", "F5", "D5", "B4",
+      "C5", "E5", "C5", "A4", "G4", "B4", "D5", "C5",
     ],
   },
 };

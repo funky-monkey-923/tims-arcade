@@ -136,8 +136,31 @@ export interface Fighter {
   // releasing the buttons afterward doesn't also register as a throw.
   superSpent: boolean;
   // How long a "hit" stagger lasts once entered — normal hits use a short
-  // stun, throws use a longer one (extra knockback + recovery time).
+  // stun, throws use a longer one (extra knockback + recovery time), and it
+  // can also be nudged up narrowly (see the combo-chain logic in
+  // stepFighter) to bridge a confirmed 2nd chained hit.
   hitStunMs: number;
+  // --- Minimal 2-hit combo/chain state (punch/kick only; see stepFighter's
+  // attack branch). Player-only by design: the buffering below reads
+  // per-frame button state, which doesn't fit cpuAI's reaction-gated
+  // decision cadence (it only re-decides every REACTION_MS[difficulty]) —
+  // the mechanism itself is symmetric (any fighter's hitStunMs can be
+  // extended, resolveHit doesn't care who's chaining), so CPU isn't broken
+  // by any of this, it just never triggers it.
+  // 0 = not mid-chain (this attack, if it lands, could start one). 1 = this
+  // attack IS the chained 2nd hit — never allowed to buffer a 3rd.
+  comboCount: number;
+  // Buffered follow-up light attack, set while the current punch/kick's hit
+  // has already landed clean (unblocked) and recover hasn't finished yet.
+  // Auto-fires the instant recover ends, skipping a return to idle.
+  comboBuffered: AttackKind | null;
+  // True while executing the buffered 2nd hit of a chain — flags the
+  // damage scale-down in the attack branch and the comboLanded event.
+  isComboHit: boolean;
+  // Whether this fighter's most recent completed hit was blocked — gates
+  // combo buffering (chaining off a blocked poke isn't the reward this is
+  // for).
+  lastHitBlocked: boolean;
 }
 
 export interface MatchState {
@@ -169,6 +192,7 @@ export interface FighterEvents extends EngineEvents {
   cpuAttackStarted?: AttackKind;
   hitLanded?: boolean; // someone landed unblocked damage this tick
   hitBlocked?: boolean; // someone landed damage that was blocked
+  comboLanded?: boolean; // the unblocked hit this tick was the chained 2nd hit of a combo
   roundOver?: boolean; // phase just left "fighting" this tick (roundEnd or matchEnd)
   won?: boolean; // only set alongside gameOver (i.e. at matchEnd) — did the player win the match?
 }
@@ -196,6 +220,10 @@ function makeFighter(x: number, width: number, charDef: CharacterDef, damageScal
     holdTimer: 0,
     superSpent: false,
     hitStunMs: 260,
+    comboCount: 0,
+    comboBuffered: null,
+    isComboHit: false,
+    lastHitBlocked: false,
   };
 }
 
@@ -240,10 +268,25 @@ export function startNextRound(state: MatchState): void {
   state.phase = "fighting";
 }
 
-function startMove(f: Fighter, name: AttackKind): void {
+function startMove(f: Fighter, name: AttackKind, isComboContinuation = false): void {
   f.state = name;
   f.timer = 0;
   f.hasHit = false;
+  f.lastHitBlocked = false;
+  if (isComboContinuation) {
+    // Caller (the recover-end branch below) already verified comboCount was
+    // 0 and a follow-up was buffered — this move IS the chain's 2nd hit.
+    f.comboCount = 1;
+    f.isComboHit = true;
+  } else {
+    // Every other call site (idle-branch punch/kick/throw/super, hold-based
+    // throw/super, cpuAI) is a fresh, non-chained attack — reset chain state
+    // so a stale comboBuffered/isComboHit from a previous attack can never
+    // leak into this one.
+    f.comboCount = 0;
+    f.isComboHit = false;
+    f.comboBuffered = null;
+  }
 }
 
 function getMeter(state: MatchState, f: Fighter): number {
@@ -314,6 +357,7 @@ interface FighterStepResult {
   attackStarted: AttackKind | null;
   damageDealt: number;
   blocked: boolean;
+  comboHit: boolean; // this tick's landed hit (if any) was a chained 2nd hit
 }
 
 function stepFighter(
@@ -324,7 +368,7 @@ function stepFighter(
   input: EngineInput | null,
   aiTick: (() => AttackKind | null) | null
 ): FighterStepResult {
-  const result: FighterStepResult = { jumped: false, attackStarted: null, damageDealt: 0, blocked: false };
+  const result: FighterStepResult = { jumped: false, attackStarted: null, damageDealt: 0, blocked: false, comboHit: false };
   f.timer += dt;
 
   if (f.state === "idle" || f.state === "walk") {
@@ -404,14 +448,58 @@ function stepFighter(
       const throwWhiffsOnState = kind === "throw" && (other.state === "hit" || other.state === "throw" || other.state === "super");
       if (dist < state.width * info.range && facingOk && !throwWhiffsOnState) {
         f.hasHit = true;
-        const dmg = resolveHit(state, f, other, info.damage, kind);
+        // A chained 2nd hit does reduced damage (75%) — this is meant to
+        // feel satisfying to land, not to double a poke's full damage.
+        const baseDamage = f.isComboHit ? info.damage * 0.75 : info.damage;
+        const dmg = resolveHit(state, f, other, baseDamage, kind);
+        f.lastHitBlocked = dmg.blocked;
+        if (f.isComboHit) result.comboHit = true;
         result.damageDealt = dmg.amount;
         result.blocked = dmg.blocked;
       }
     }
+
+    // Combo buffering: once a punch/kick has landed clean (unblocked) and
+    // comboCount is still 0 (i.e. this is the FIRST hit of a potential
+    // chain, not already the chained 2nd hit), the player can buffer a
+    // follow-up light attack any time before recover ends. Player-only —
+    // see the comment on Fighter.comboCount for why the CPU doesn't use
+    // this (the mechanism itself doesn't otherwise favor either side).
+    if (
+      input &&
+      (kind === "punch" || kind === "kick") &&
+      f.hasHit &&
+      !f.lastHitBlocked &&
+      f.comboCount === 0 &&
+      !f.comboBuffered
+    ) {
+      const bothHeld = input.primaryAction && input.secondaryAction;
+      if (!bothHeld) {
+        if (input.primaryAction) f.comboBuffered = "punch";
+        else if (input.secondaryAction) f.comboBuffered = "kick";
+      }
+    }
+
     if (f.timer >= info.windup + info.active + info.recover) {
-      f.state = "idle";
-      f.vx = 0;
+      if (f.comboBuffered && f.comboCount === 0) {
+        const nextKind = f.comboBuffered;
+        f.comboBuffered = null;
+        startMove(f, nextKind, true);
+        // Narrow hit-stun extension: only nudges the defender's stun, and
+        // only if they're still actually in "hit" right now, just enough to
+        // stay staggered through this 2nd hit's windup+active — not a
+        // blanket change to hitStunMs for ordinary single hits.
+        if (other.state === "hit") {
+          const nextInfo = computeMoveInfo(f, nextKind);
+          const neededStun = other.timer + nextInfo.windup + nextInfo.active + 40;
+          other.hitStunMs = Math.max(other.hitStunMs, neededStun);
+        }
+      } else {
+        f.state = "idle";
+        f.vx = 0;
+        f.comboCount = 0;
+        f.comboBuffered = null;
+      }
     }
   } else if (f.state === "hit") {
     if (f.timer >= f.hitStunMs) f.state = "idle";
@@ -536,6 +624,7 @@ export function step(state: MatchState, input: EngineInput, dtMs: number, _tsMs:
     const anyUnblocked = (playerResult.damageDealt > 0 && !playerResult.blocked) || (cpuResult.damageDealt > 0 && !cpuResult.blocked);
     if (anyUnblocked) events.hitLanded = true;
     if (anyBlocked) events.hitBlocked = true;
+    if (anyUnblocked && (playerResult.comboHit || cpuResult.comboHit)) events.comboLanded = true;
   }
 
   events.score = state.damageDealt;

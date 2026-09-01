@@ -97,6 +97,16 @@ import fighterTitanWalk1Url from "../assets/game/sprites/fighter-titan-walk1.png
 import bunkerCrateUrl from "../assets/game/sprites/bunker-crate.png";
 import bossShipUrl from "../assets/game/sprites/boss-ship.png";
 
+// Added 2026-09-01 for the Snake / Munch Maze artistic overhaul. A shaded
+// circle (gradient + highlight baked into the art) to use as Munch Maze's
+// player body instead of a flat-filled arc — the animated mouth is still
+// cut into it at draw time (destination-out compositing), this just gives
+// the body itself some depth. No matching asset exists for Wiggle Worm's
+// segments in any available pack (the only "snake" sprites in these packs
+// are side-scrolling platformer enemies, wrong shape for a per-cell grid
+// body) — that game's overhaul is procedural shading only, no new sprite.
+import pacmanPlayerBodyUrl from "../assets/game/sprites/pacman-player-body.png";
+
 function loadImage(url: string): HTMLImageElement {
   const img = new Image();
   img.src = url;
@@ -172,6 +182,7 @@ export const SPRITES = {
   fighterTitanWalk1: loadImage(fighterTitanWalk1Url),
   bunkerCrate: loadImage(bunkerCrateUrl),
   bossShip: loadImage(bossShipUrl),
+  pacmanPlayerBody: loadImage(pacmanPlayerBodyUrl),
 };
 
 // The soccer character art is drawn facing right (+X, i.e. 0 radians in

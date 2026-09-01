@@ -3,7 +3,7 @@ import { controls } from "../../lib/input";
 import { engine } from "../../lib/audio";
 import * as fighterEngine from "./engine";
 import { CHARACTERS, type Difficulty, type MatchState } from "./engine";
-import { draw, onBlock, onHitLanded, onKo, resetEffects } from "./render";
+import { draw, onBlock, onHitLanded, onKo, onComboLanded, resetEffects } from "./render";
 import type { GameComponentProps } from "../engineTypes";
 
 const DIFFICULTY_OPTIONS: { id: Difficulty; label: string; blurb: string }[] = [
@@ -116,6 +116,13 @@ export default function RumbleRing({ width, height, paused, onScoreUpdate, onGam
             const heavy = state.player.state === "super" || state.cpu.state === "super";
             onHitLanded(hx, hy, heavy);
             engine.cheer(heavy ? 1 : 0.55, heavy ? 1600 : 700);
+            // A landed 2-hit combo gets an extra bright "ding" (reusing the
+            // existing coin SFX rather than adding a new sample) plus a
+            // bigger spark burst — see onComboLanded in render.ts.
+            if (events.comboLanded) {
+              engine.playSfx("coin");
+              onComboLanded(hx, hy);
+            }
           } else if (events.hitBlocked) {
             // A softer, lighter parry sound — clearly distinguishable from
             // "hit" landing unblocked, unlike the old shared "move" blip.

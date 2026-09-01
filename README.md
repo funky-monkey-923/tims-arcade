@@ -29,7 +29,9 @@ Every game has its own difficulty tiers, its own sound effects and music, and it
 - **A synthesized chiptune audio engine** — built from scratch with the Web Audio API, with independent music/SFX volume and mute, plus real royalty-free sound design layered on top.
 - **Built for every input** — keyboard, gamepad, on-screen touch controls, even pointer drag, all through one unified control scheme so it plays as well on a tablet as it does at a desk.
 - **Accessibility, not an afterthought** — a reduced-motion mode, color-independent gameplay indicators (nothing important is ever color-only), and high-contrast focus rings.
-- **Fully offline-capable** — everything after the first load lives in `localStorage`. No account, no internet connection required once it's open.
+- **Fully offline-capable** — everything after the first load lives in `localStorage`, and it's installable as a real PWA (add-to-home-screen, offline service worker) so it works with zero internet connection at all, not just no server calls.
+- **Backup & restore** — a "download my arcade" export and a matching import, in case browser storage ever gets cleared. Local-only data doesn't have to mean fragile data.
+- **A cross-game arcade rank** — a level and title that climbs from combined play across all 6 games, not just one.
 
 ## 🛠️ Built With
 
@@ -68,7 +70,7 @@ Ships to **GitHub Pages** automatically via GitHub Actions on every push to `mai
 
 ## 📄 Credits & License
 
-All third-party art, audio, and fonts are credited in [`CREDITS.md`](./CREDITS.md) — everything used is CC0 (public domain), courtesy of the incredible [Kenney.nl](https://kenney.nl) asset library.
+The code in this repo is licensed under [GPL-3.0](./LICENSE). All third-party art, audio, and fonts are credited separately in [`CREDITS.md`](./CREDITS.md) — everything used is CC0 (public domain), courtesy of the incredible [Kenney.nl](https://kenney.nl) asset library.
 
 ---
 
