@@ -262,16 +262,9 @@ giving each its own mood, since both are light-hearted maze/grid games with
 a similar energy — unlike every other pairing in the app, which each got a
 mood of their own.
 
-## App icons — added 2026-09-01, for PWA installability
+## App icons & favicon — original 2026-09-01, redesigned 2026-09-01
 
-`public/icon-192.png`, `public/icon-512.png`, and `public/icon-512-maskable.png`
-are all derived from the app's own existing `public/favicon.svg` mark (the
-purple lightning bolt), not from any third-party pack — rendered at each
-size onto a `--color-night` (`#1a1140`) background so the icon looks
-intentional rather than a logo floating on transparency in an OS icon grid.
-The maskable variant has extra safe-area padding since Android crops
-maskable icons to a circle/squircle. No new licensing to track here; same
-ownership as the existing favicon.
+`public/favicon.svg`, `public/icon-192.png`, `public/icon-512.png`, and `public/icon-512-maskable.png` all now draw the same original mascot mark (see `src/components/MascotAvatar.tsx` for the fuller, tiered version used in-app) — a simple flat-geometric teal "spark buddy" face with a coral cap, on a `--color-night` (`#1a1140`) background. Not from any third-party pack; hand-authored inline SVG/canvas paths, same as `MascotAvatar.tsx` and `src/lib/gameIcons.tsx`. Replaces an earlier icon set derived from the app's old lightning-bolt favicon mark (itself a `cairosvg`-limitation fallback — the original bolt art used SVG `<mask>`/blur-filter elements `cairosvg` can't rasterize, so only a flat, characterless silhouette ever made it into the PWA icons; the new mascot-based art was designed for these sizes from the start, not stripped down from something bigger). The maskable variant has extra safe-area padding since Android crops maskable icons to a circle/squircle. No new licensing to track here — original art, same as the icons it replaces.
 
 ## Where things live
 

@@ -77,6 +77,12 @@ interface NetRipple {
 let netRipple: NetRipple | null = null;
 const NET_RIPPLE_MS = 550;
 
+// Deferred rather than spawned directly in onGoal(): that function only
+// knows *that* a goal went in, not the canvas width/height needed to place a
+// centered burst — same reason MunchMaze's ghost-eaten/caught events queue
+// until draw() knows this frame's geometry. Drained on the very next draw().
+let pendingGoalConfetti = false;
+
 let kickFlashUntil = 0; // ball squash-on-strike window
 let kickFlashStart = 0;
 
@@ -100,6 +106,13 @@ export function onGoal(scoredByPlayer: boolean, tsMs: number): void {
   if (scoredByPlayer) {
     shake.trigger(16, 420);
     goalBanner = { text: "GOAL!", startTs: tsMs, durationMs: 1700, fill: "#ffd43b", outline: "#150c33" };
+    // The player's own goal is this game's biggest celebratory moment (it
+    // already gets the biggest banner + strongest shake of any event here),
+    // but had no particle burst at all — confetti() exists specifically for
+    // this (see its doc comment in lib/particles.ts) and was simply never
+    // wired in. Kept out of the CPU-scored branch on purpose, matching the
+    // existing "no cheer-worthy fanfare" rule for the opponent's goal.
+    pendingGoalConfetti = true;
   } else {
     shake.trigger(7, 220);
     goalBanner = { text: "They scored...", startTs: tsMs, durationMs: 1300, fill: "#c9295f", outline: "#150c33" };
@@ -147,6 +160,7 @@ export function resetEffects(): void {
   whistleRing = null;
   countdownLabel = null;
   ballSpinAngle = 0;
+  pendingGoalConfetti = false;
 }
 
 // ---- Pitch / stadium ------------------------------------------------------
@@ -635,6 +649,13 @@ export function draw(ctx: CanvasRenderingContext2D, state: SoccerState, ts: numb
   prevDrawTs = ts;
   particles.update(dt);
   shake.update(dt);
+
+  if (pendingGoalConfetti) {
+    pendingGoalConfetti = false;
+    // Rains down across a wide band over the pitch, per confetti()'s own
+    // design (see lib/particles.ts) — not aimed at a specific goal mouth.
+    particles.confetti(width / 2, height * 0.12);
+  }
 
   const goalHalf = height * 0.16;
   const goalTop = height / 2 - goalHalf;

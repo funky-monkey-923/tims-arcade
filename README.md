@@ -35,7 +35,11 @@ Look. LOOK. We could have stopped at "six canvas games in a folder." We did not 
 - **Accessibility, not an afterthought** — a reduced-motion mode, color-independent gameplay indicators (nothing important is EVER color-only, we checked, twice), and high-contrast focus rings. Everyone deserves to lose to a boss fairly.
 - **Fully offline-capable** — everything after the first load lives in `localStorage`, and it's installable as a real PWA (add-to-home-screen, offline service worker), so it works with zero internet connection at all. Take it to the airport. Take it to the moon. It does not care.
 - **Backup & restore** — a "download my arcade" export and a matching import, in case browser storage ever gets cleared by forces beyond mortal comprehension. Local-only data doesn't have to mean fragile data, it just has to mean WE learned that the hard way once.
-- **A cross-game arcade rank** — a level and title that climbs from combined play across all 6 games, because grinding one game for XP is out, grinding SIX games for XP is a lifestyle.
+- **A cross-game arcade rank, now with an actual face** — a level and title that climbs from combined play across all 6 games (grinding one game for XP is out, grinding SIX games for XP is a lifestyle), fronted by a little evolving mascot who gets a cap, sunglasses, a medallion, a cape, and eventually a crown as you rank up. It leads the menu screen now, not four competing stat lines. It earned that.
+- **A real "hello" for new arcades** — a one-time welcome screen for brand-new setups (not returning ones, we checked) that actually explains the six cabinets before dropping you into "Who's Playing?" cold. Groundbreaking concept: telling people what the thing is before asking them to commit to a profile name.
+- **A "pick back up where you left off" button** — because re-scanning six cabinets every single time you open the arcade is a crime against convenience, and this app has opinions about convenience.
+- **A gentle one-time nudge to back up your scores** — shows up once you've clearly got something worth losing, never nags, never comes back once you've dismissed it or backed up. We have some self-respect, see above.
+- **Custom cabinet icons and a marquee strip on every game card** — because generic rounded UI cards were never going to sell the "you're at an arcade" fantasy on their own, and honestly the cards look like they're wearing little theater marquees now, which is objectively cooler.
 
 ## 🛠️ Built With (a suspicious amount of confidence)
 
@@ -65,6 +69,7 @@ Other useful commands:
 npm run build       # type-check + production build
 npm run typecheck    # TypeScript project-wide check
 npm run lint         # oxlint
+npm run test         # Vitest — engine/storage unit tests
 npm run preview      # preview the production build locally
 ```
 

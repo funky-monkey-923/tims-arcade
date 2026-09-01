@@ -458,13 +458,20 @@ export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: numb
   }
 
   if (state.finished || state.dnf) {
+    // progress is fixed rather than time-driven since this banner should just
+    // hold once the race ends — 0.5 sits past the slam-in (which completes at
+    // BANNER_SLAM_PORTION = 0.28) and before the fade-out begins at
+    // BANNER_FADE_START = 0.7, so it renders fully settled and fully opaque.
+    // (A literal 1 — the value this used to pass — lands exactly at the end
+    // of the fade, i.e. alpha 0: these banners were rendering fully
+    // transparent and never actually visible.)
     if (state.finished) {
-      drawBanner(ctx, `Finished — ${ordinal(getPlayerPosition(state))} place!`, width / 2, height / 2, 1, {
+      drawBanner(ctx, `Finished — ${ordinal(getPlayerPosition(state))} place!`, width / 2, height / 2, 0.5, {
         fill: "#2ee6d6",
         size: 26,
       });
     } else {
-      drawBanner(ctx, "DNF — too many crashes", width / 2, height / 2, 1, { fill: "#ff4d8d", size: 24 });
+      drawBanner(ctx, "DNF — too many crashes", width / 2, height / 2, 0.5, { fill: "#ff4d8d", size: 24 });
     }
   }
 }

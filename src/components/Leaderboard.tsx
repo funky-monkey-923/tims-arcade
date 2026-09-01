@@ -76,6 +76,11 @@ export default function Leaderboard({ onBack }: LeaderboardProps) {
             overallScore={overallScore}
           />
         )}
+        {activeProfile && overallScore === 0 && (
+          <p className="text-cloud/50 text-sm mb-8 text-center max-w-sm">
+            Nothing on the board yet — play any game once and your best run shows up right here. 🎮
+          </p>
+        )}
 
         {overallScoreboard.length > 1 && (
           <div className="w-full max-w-3xl rounded-cabinet border-4 border-violet-2 bg-violet/50 p-4 sm:p-5 mb-8">

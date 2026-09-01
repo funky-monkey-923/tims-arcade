@@ -448,9 +448,17 @@ export function step(state: StarDefenderState, input: EngineInput, dtMs: number,
     }
   } else {
     // enemy formation movement + diver break-away
-    const formationEnemies = wave.enemies.filter((e) => e.alive && !e.diving);
-    const divingEnemies = wave.enemies.filter((e) => e.alive && e.diving);
-    const aliveEnemies = wave.enemies.filter((e) => e.alive);
+    // Single pass building all three views at once instead of three separate
+    // .filter() calls over the same (small, but scanned 60x/sec) enemy list.
+    const formationEnemies: Enemy[] = [];
+    const divingEnemies: Enemy[] = [];
+    const aliveEnemies: Enemy[] = [];
+    for (const e of wave.enemies) {
+      if (!e.alive) continue;
+      aliveEnemies.push(e);
+      if (e.diving) divingEnemies.push(e);
+      else formationEnemies.push(e);
+    }
 
     if (aliveEnemies.length > 0) {
       if (formationEnemies.length > 0) {

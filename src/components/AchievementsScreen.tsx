@@ -24,9 +24,16 @@ export default function AchievementsScreen({ onBack }: AchievementsScreenProps) 
           {activeProfile ? `${activeProfile.name}'s badges` : "Pick a player to see their badges"}
         </p>
         {activeProfile && (
-          <p className="font-pixel text-[10px] text-lime mb-8">
+          <p className="font-pixel text-[10px] text-lime mb-2">
             {unlockedAchievementIds.length} / {achievements.length} UNLOCKED
           </p>
+        )}
+        {activeProfile && profileStats.totalPlays === 0 ? (
+          <p className="text-cloud/50 text-sm mb-6 text-center max-w-sm">
+            Every badge starts locked — play your first game and "Arcade Rookie" is yours instantly. 🎮
+          </p>
+        ) : (
+          <div className="mb-6" />
         )}
 
         <div className="w-full max-w-3xl grid grid-cols-1 sm:grid-cols-2 gap-4">

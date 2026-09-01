@@ -18,7 +18,7 @@ The four-tier scoring model (my-last / my-best / overall-best / overall-score), 
 
 - **Data export/import (backup & restore) — S/M. ✅ SHIPPED** (`src/lib/storage.ts`'s `exportStateJson`/`importStateJson`, wired into Settings).
 - **PWA / installability — S. ✅ SHIPPED** (`vite-plugin-pwa`, see `vite.config.ts`).
-- **First-run onboarding — M.** A one-time "here's how to play" overlay gated on a new flag, shown before the first profile is even created.
+- **First-run onboarding — M. ✅ SHIPPED** (`src/components/Welcome.tsx`, gated on `profiles.length === 0` — see `App.tsx`).
 - **Daily challenge / featured game — S.** A deterministic "pick of the day" highlighted on the menu — no new storage needed, pure presentation logic.
 - **Session stats (time played) — S.** Track playtime per session and roll it into profile stats.
 - **Per-profile difficulty memory — S/M.** Remember the last difficulty picked per profile per game, so kids don't have to re-pick every time.
@@ -36,11 +36,11 @@ The four-tier scoring model (my-last / my-best / overall-best / overall-score), 
 
 ### Removals/simplifications
 
-Nothing reads as overbuilt — the scope is already lean for a kid-facing app. One small correctness gap: achievement "already seen" state resets on page reload, so a kid could get re-toasted for something they unlocked days ago. Worth a quick fix (persist seen IDs) rather than a redesign.
+Nothing reads as overbuilt — the scope is already lean for a kid-facing app. The previously-flagged "achievement already-seen resets on reload" concern turned out not to be a real bug on inspection (`AchievementToasts.tsx` already baselines its seen-set on mount without celebrating, so a reload just re-baselines silently) — no fix was needed, this note is now stale and kept only for the record.
 
 ### Architecture notes for whoever implements any of this
 
-- `localStorage` writes fail silently on quota/private-mode — any new persisted feature should keep that "never throw" posture but add a visible "storage full" signal, since right now data loss gives zero feedback.
+- `localStorage` writes fail silently on quota/private-mode. **✅ SHIPPED**: a visible signal now exists — `saveState()` in `storage.ts` calls an optional failure listener, `ArcadeContext` registers one and exposes `storageError`/`dismissStorageError`, and `src/components/StorageErrorBanner.tsx` renders a dismissible top banner app-wide when it fires.
 - The existing migration pattern (shallow-merge parsed state over defaults) should be followed for any new top-level state field.
 - New derived stats should follow the existing "derive in storage.ts, memoize in context" shape rather than storing computed values.
 - Per-profile difficulty presets would need to flow in as a new prop on `GameComponentProps`, not have games reach into the arcade context directly — that would break the "engine files never import React" rule.
@@ -51,15 +51,15 @@ Nothing reads as overbuilt — the scope is already lean for a kid-facing app. O
 
 ### 2.1 Wiggle Worm (Snake)
 
-**Status:** one of the two games that has *not* had a gameplay deep-overhaul pass yet — still close to a classic single-food, single-maze implementation.
+**Status: this section is now stale relative to the code — an earlier "Step 2" gameplay pass already shipped almost everything below, but the bullets were never updated to say so.** Confirmed by re-reading `src/games/snake/engine.ts`: speed ramps with score, three food types (normal/golden/shrink), wave-based obstacle layouts, and a real wave counter are all already implemented. Only one item from the original list is still genuinely open.
 
 **Gameplay & mechanics**
-- Speed ramps with score (currently one fixed tick rate for the whole run) — **S**.
-- Multiple food types: normal apple, rare time-limited golden apple, a shrink-berry — **M**.
-- Obstacles / hand-authored maze layouts selected by wave — **M**.
-- Portals (a linked pair of teleporting cells) — **S**.
-- A rival AI snake (starting as a simple random-walker) — **M/L**.
-- A real wave/level counter that actually changes something (currently absent entirely) — **M**.
+- Speed ramps with score — **✅ SHIPPED** (`TICK_MS_BASE`/`TICK_MS_MIN`/`SPEED_RAMP_SCORE_STEP` in `engine.ts`).
+- Multiple food types (normal, golden, shrink) — **✅ SHIPPED** (`FoodKind` in `engine.ts`).
+- Obstacles / hand-authored maze layouts selected by wave — **✅ SHIPPED** (`wallsForWave` in `engine.ts`).
+- A real wave/level counter tied to foods eaten, driving both layout and pacing — **✅ SHIPPED** (`FOOD_PER_WAVE` in `engine.ts`).
+- Portals (a linked pair of teleporting cells) — still open, minor — **S**.
+- A rival AI snake (starting as a simple random-walker) — still open, the one genuinely meaningful gap left in this game — **M/L**.
 - Pointer/touch control currently reads a single tap-vector rather than a drag — worth smoothing — **S**.
 
 **Artistic overhaul**
@@ -72,15 +72,15 @@ Nothing reads as overbuilt — the scope is already lean for a kid-facing app. O
 
 ### 2.2 Munch Maze (Pac-Man)
 
-**Status:** the other game without a gameplay deep-overhaul. The `wave` counter already increments but currently changes nothing about difficulty — the single biggest opportunity here.
+**Status: this section is also stale relative to the code — the same "Step 2" pass covered this game too.** Confirmed by re-reading `src/games/pacman/engine.ts`: ghost personalities, alternate maze layouts, a fruit bonus, a speed-boost power-up, and real wave-tied difficulty escalation are all already implemented. Only the boss-ghost idea is still genuinely open.
 
 **Gameplay & mechanics**
-- Ghost personalities: today both ghosts run one identical behavior function and only differ by sprite/color. Giving each of the 4 existing ghost sprites (only 2 are ever spawned) its own behavior — an always-chaser, an ambusher, a wanderer, a late-activator — would be a high-value, moderate-effort change — **M**.
-- 2–3 alternate maze layouts selected by wave — **M**.
-- A fruit bonus item — there's already an unused sprite sitting idle for exactly this — **S**.
-- Power-up variety beyond the one ghost-eating pellet (a speed boost, a freeze) — **M**.
-- Real difficulty escalation tied to wave number (faster ghosts, shorter power duration, more ghosts) — **S/M**.
-- A boss-style "king ghost" every 5th wave that can't be eaten and must be avoided — **M**.
+- Ghost personalities (chaser, late-activator, wanderer, ambusher, gradually added as waves climb) — **✅ SHIPPED** (`ghostCountForWave` and per-slot behavior in `engine.ts`).
+- 2–3 alternate maze layouts selected by wave — **✅ SHIPPED** (`buildMaze` alternation in `engine.ts`).
+- A fruit bonus item — **✅ SHIPPED** (`FRUIT_MS`/`FRUIT_SCORE` in `engine.ts`).
+- A power-up beyond the base ghost-eating pellet (a speed boost) — **✅ SHIPPED** (`SPEED_TICK_DIVISOR`/`SPEED_BOOST_MS`/`SPEED_PELLET_SCORE` in `engine.ts`; a second "freeze" variant remains a possible future addition, not required).
+- Real difficulty escalation tied to wave number (faster ghosts, shorter power duration) — **✅ SHIPPED** (`scaredMsForWave`/`ghostTickMsForWave` in `engine.ts`).
+- A boss-style "king ghost" every 5th wave that can't be eaten and must be avoided — still open, the one genuinely meaningful gap left in this game — **M**.
 - Controls are already in good shape (correct one-cell-ahead turn buffering) — no changes needed there.
 
 **Artistic overhaul**
@@ -165,18 +165,16 @@ Nothing reads as overbuilt — the scope is already lean for a kid-facing app. O
 - Route HUD text through the shared text helpers, and give the lap banner the shared slam-in treatment.
 - Fix sound wiring: nitro should play its dedicated boost sound (not the generic powerup blip), crashes should play the dedicated crash sound (not the generic hit blip), and the race should already be using its own dedicated music mood rather than a generic one.
 
-One small housekeeping note surfaced during research: both `KickoffClash.tsx` and `TurboDash.tsx` still have stale sibling `.jsx` files sitting alongside the real `.tsx` versions — worth confirming they're dead and deleting them during whichever pass touches these two games.
-
 ---
 
 ## 3. Suggested Sequencing
 
 Roughly in order of effort-to-payoff, if useful as a starting point for deciding what to do next:
 
-1. **Kickoff Clash + Turbo Dash artistic wire-in** — the highest payoff-per-effort item in the whole plan, since all the art/audio/particle assets already exist and just need to be connected. This was in progress before and is the most "ready to go" work available.
-2. **Snake + Munch Maze gameplay deep-overhaul** — these are the two games still behind the other four in depth; bringing them up to par (wave escalation, ghost personalities, food variety) would even out the arcade.
-3. **Star Defender + Rumble Ring artistic pass** — both are gameplay-complete but visually behind; Rumble Ring in particular has zero character art, which is the single most visible gap left in the arcade.
-4. **App shell additions** — data export/import and PWA installability are both cheap, high-value, and independent of anything game-specific, so they can slot in whenever there's a break between game-focused sessions.
-5. **Larger systems** (combo system for Rumble Ring, cross-game mascot/meta-progression, track curvature for Turbo Dash) — save these for when there's appetite for a bigger standalone arc, since each is a real subsystem rather than an incremental add.
+1. **Kickoff Clash + Turbo Dash artistic wire-in** — the highest payoff-per-effort item in the whole plan, since all the art/audio/particle assets already exist and just need to be connected. This was in progress before and is the most "ready to go" work available. **✅ SHIPPED.**
+2. **Snake + Munch Maze gameplay deep-overhaul** — these are the two games still behind the other four in depth; bringing them up to par (wave escalation, ghost personalities, food variety) would even out the arcade. **✅ SHIPPED** (see corrected 2.1/2.2 above — only a rival AI snake and a king-ghost boss remain open).
+3. **Star Defender + Rumble Ring artistic pass** — both are gameplay-complete but visually behind; Rumble Ring in particular has zero character art, which is the single most visible gap left in the arcade. **✅ SHIPPED.**
+4. **App shell additions** — data export/import and PWA installability are both cheap, high-value, and independent of anything game-specific, so they can slot in whenever there's a break between game-focused sessions. **✅ SHIPPED.**
+5. **Larger systems** (combo system for Rumble Ring, cross-game mascot/meta-progression, track curvature for Turbo Dash) — save these for when there's appetite for a bigger standalone arc, since each is a real subsystem rather than an incremental add. **✅ SHIPPED.**
 
 Nothing here needs to happen in this order — it's just one reasonable path through the list.

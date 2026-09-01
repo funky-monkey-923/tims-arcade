@@ -21,15 +21,25 @@ const TOAST_MS = 4500;
 // doesn't cause a flood of "unlocked" toasts for badges they earned days
 // ago.
 export default function AchievementToasts() {
-  const { activeProfileId, unlockedAchievementIds, achievements } = useArcade();
+  const { activeProfileId, unlockedAchievementIds, achievements, importGeneration } = useArcade();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seenByProfile = useRef<Record<string, Set<AchievementId>>>({});
   const keyRef = useRef(0);
+  const lastImportGeneration = useRef(importGeneration);
 
   useEffect(() => {
     if (!activeProfileId) return;
+    // A restored backup can legitimately jump straight to having achievements
+    // already unlocked long ago — those shouldn't get celebrated as if they
+    // just happened, the same way a fresh app-load never celebrates
+    // pre-existing unlocks (see the "first time seeing this profile" branch
+    // below). Detecting "we're on the tick right after an import" and
+    // re-baselining instead of diffing is what keeps that true for restores
+    // too, not just for a normal page load.
+    const justImported = importGeneration !== lastImportGeneration.current;
+    lastImportGeneration.current = importGeneration;
     const seen = seenByProfile.current[activeProfileId];
-    if (!seen) {
+    if (!seen || justImported) {
       // First time we're seeing this profile this session — baseline
       // without celebrating, so re-opening the app doesn't re-announce
       // every badge already earned.
@@ -50,7 +60,7 @@ export default function AchievementToasts() {
       setTimeout(() => setToasts((prev) => prev.filter((x) => x.key !== t.key)), TOAST_MS);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProfileId, unlockedAchievementIds]);
+  }, [activeProfileId, unlockedAchievementIds, importGeneration]);
 
   if (toasts.length === 0) return null;
 

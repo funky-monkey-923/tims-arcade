@@ -23,6 +23,39 @@ import { motion, scaleForMotion } from "../../lib/motion";
 const particles = new ParticleField();
 const shake = new ScreenShake();
 
+// The faint background gridlines never change between frames (they only
+// depend on the canvas's own width/height, which is fixed for the run) —
+// caching them into an offscreen layer avoids re-running 2*(GRID-1) stroke
+// calls 60x/sec for something that's pure background decoration. Same
+// "build once, blit every frame" approach as Munch Maze's wall-layer cache.
+let gridLayer: HTMLCanvasElement | null = null;
+let gridLayerWidth = 0;
+let gridLayerHeight = 0;
+function getGridLayer(width: number, height: number, cell: number): HTMLCanvasElement {
+  if (!gridLayer) gridLayer = document.createElement("canvas");
+  if (gridLayer.width !== width || gridLayer.height !== height || gridLayerWidth !== width || gridLayerHeight !== height) {
+    gridLayer.width = width;
+    gridLayer.height = height;
+    const lctx = gridLayer.getContext("2d")!;
+    lctx.clearRect(0, 0, width, height);
+    lctx.strokeStyle = "rgba(255,255,255,0.04)";
+    for (let i = 1; i < GRID; i++) {
+      lctx.beginPath();
+      lctx.moveTo(i * cell, 0);
+      lctx.lineTo(i * cell, height);
+      lctx.stroke();
+      lctx.beginPath();
+      lctx.moveTo(0, i * cell);
+      lctx.lineTo(width, i * cell);
+      lctx.stroke();
+    }
+    gridLayerWidth = width;
+    gridLayerHeight = height;
+  }
+  return gridLayer;
+}
+
+
 interface BannerState {
   text: string;
   startTs: number;
@@ -183,17 +216,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: SnakeState, ts: numbe
 
   ctx.fillStyle = "#150c33";
   ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = "rgba(255,255,255,0.04)";
-  for (let i = 1; i < GRID; i++) {
-    ctx.beginPath();
-    ctx.moveTo(i * cell, 0);
-    ctx.lineTo(i * cell, height);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, i * cell);
-    ctx.lineTo(width, i * cell);
-    ctx.stroke();
-  }
+  ctx.drawImage(getGridLayer(width, height, cell), 0, 0);
 
   // obstacle tiles — solid blocking walls, drawn before food/snake so they
   // read clearly as part of the arena floor

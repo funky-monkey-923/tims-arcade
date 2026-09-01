@@ -9,6 +9,8 @@ import GameMenu from "./components/GameMenu";
 import Leaderboard from "./components/Leaderboard";
 import AchievementsScreen from "./components/AchievementsScreen";
 import AchievementToasts from "./components/AchievementToasts";
+import StorageErrorBanner from "./components/StorageErrorBanner";
+import Welcome from "./components/Welcome";
 import GameShell from "./games/GameShell";
 import SnakeGame from "./games/snake/SnakeGame";
 import MunchMaze from "./games/pacman/MunchMaze";
@@ -86,16 +88,32 @@ const GAME_META: Record<GameId, GameMetaEntry> = {
   },
 };
 
-type View = "profiles" | "menu" | "leaderboard" | "achievements" | "game";
+type View = "welcome" | "profiles" | "menu" | "leaderboard" | "achievements" | "game";
 
 function Screens() {
-  const { activeProfileId, settings } = useArcade();
-  const [view, setView] = useState<View>(activeProfileId ? "menu" : "profiles");
+  const { activeProfileId, profiles, settings } = useArcade();
+  // Gated on `profiles.length === 0` (a genuinely brand-new install), not
+  // on `!activeProfileId` (which is also true right after deleting the last
+  // active profile, or before picking one on a device other people already
+  // set up profiles on) — a returning household shouldn't see the "welcome"
+  // pitch again just because nobody's currently selected.
+  const [view, setView] = useState<View>(profiles.length === 0 ? "welcome" : activeProfileId ? "menu" : "profiles");
   const [gameId, setGameId] = useState<GameId | null>(null);
 
   useEffect(() => {
     loadDisplayFont();
     const detach = attachGlobalInput();
+    // Removes the plain-HTML splash (see index.html) now that React has
+    // actually mounted and painted a real screen — a brief fade-out reads
+    // better than a hard pop, but the removal itself must not be delayed by
+    // it (a slow device shouldn't keep the splash up any longer than
+    // necessary just for a transition to play).
+    const splash = document.getElementById("splash");
+    if (splash) {
+      splash.style.transition = "opacity 0.25s ease-out";
+      splash.style.opacity = "0";
+      setTimeout(() => splash.remove(), 260);
+    }
     return detach;
   }, []);
 
@@ -131,7 +149,9 @@ function Screens() {
   const meta = gameId ? GAME_META[gameId] : null;
 
   const screen =
-    view === "profiles" ? (
+    view === "welcome" ? (
+      <Welcome onDone={() => setView("profiles")} />
+    ) : view === "profiles" ? (
       <ProfilePicker onDone={() => setView("menu")} />
     ) : view === "menu" ? (
       <GameMenu
@@ -158,6 +178,7 @@ function Screens() {
   return (
     <>
       <Starfield />
+      <StorageErrorBanner />
       <AchievementToasts />
       {/* `key={view}` forces a remount on every screen switch, so the fade
           + slight rise defined by .animate-screen-enter replays each time

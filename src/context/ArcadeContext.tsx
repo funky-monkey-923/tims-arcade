@@ -16,6 +16,11 @@ import {
   getUnlockedAchievementIds,
   getRecentHighlights,
   getMascotProgress,
+  defaultBackupFilename,
+  markBackupExported,
+  dismissBackupNudge as dismissBackupNudgeFn,
+  shouldShowBackupNudge,
+  setSaveFailureListener,
   ACHIEVEMENTS,
   GAMES,
   MAX_PROFILES,
@@ -65,18 +70,40 @@ interface ArcadeContextValue {
   mascotProgress: MascotProgress;
   /** Serializes everything (profiles, scores, settings) into a downloadable backup file's contents. */
   exportData: () => string;
-  /**
-   * Restores state from a previously-exported backup file's contents.
+  /** Restores state from a previously-exported backup file's contents.
    * Replaces the whole app state on success — the caller should confirm
    * with the user first, since this can't be undone.
    */
   importData: (json: string) => ImportResult;
+  /** Bumped once on every successful importData() call. AchievementToasts watches this to know "the unlocked-achievements list just changed because of a restore, not because something was actually just earned" — a restored backup can easily contain achievements that look brand-new to this session's in-memory "seen" tracking even though they were really unlocked long ago, and this is what lets it re-baseline instead of re-celebrating them. */
+  importGeneration: number;
+  /** Builds the backup file and triggers a real browser download in one step — the single implementation both SettingsPanel and the backup nudge banner use, so the download logic (and "mark as backed up" bookkeeping) only exists once. */
+  downloadBackup: () => void;
+  /** True once enough has been played with no backup ever taken and the nudge hasn't been dismissed — see shouldShowBackupNudge. */
+  backupNudgeVisible: boolean;
+  /** Permanently dismisses the backup nudge (until a fresh export re-opens the loop, which resets it anyway). */
+  dismissBackupNudge: () => void;
+  /** True once a localStorage write has failed this session (quota exceeded, private mode, etc.) — state still works in memory, it just isn't persisting. */
+  storageError: boolean;
+  /** Dismisses the storage-error banner. Doesn't fix the underlying cause — just acknowledges it, same spirit as the backup nudge. */
+  dismissStorageError: () => void;
 }
 
 const ArcadeCtx = createContext<ArcadeContextValue | null>(null);
 
 export function ArcadeProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState(() => loadState());
+  const [storageError, setStorageError] = useState(false);
+
+  // Registered once, for the life of the app — turns any write failure from
+  // any mutator (they all funnel through storage.ts's saveState) into a
+  // single piece of UI-visible state, without every mutator here needing to
+  // check a return value.
+  useEffect(() => {
+    setSaveFailureListener(() => setStorageError(true));
+    return () => setSaveFailureListener(null);
+  }, []);
+  const dismissStorageError = useCallback(() => setStorageError(false), []);
 
   useEffect(() => {
     engine.setMusicVolume(state.settings.musicVolume);
@@ -136,11 +163,30 @@ export function ArcadeProvider({ children }: { children: ReactNode }) {
   const recentHighlights = useMemo(() => getRecentHighlights(state), [state]);
   const mascotProgress = useMemo(() => getMascotProgress(state, state.activeProfileId), [state]);
   const exportData = useCallback(() => exportStateJson(state), [state]);
+  const [importGeneration, setImportGeneration] = useState(0);
   const importData = useCallback((json: string): ImportResult => {
     const result = importStateJson(json);
-    if (result.ok) setState(result.state);
+    if (result.ok) {
+      setState(result.state);
+      setImportGeneration((g) => g + 1);
+    }
     return result;
   }, []);
+  const downloadBackup = useCallback(() => {
+    // A plain in-memory Blob URL, not a network round-trip — this app has no
+    // backend, so "download my data" is just "hand back the JSON I already
+    // have," same spirit as saveState() itself.
+    const blob = new Blob([exportStateJson(state)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = defaultBackupFilename();
+    a.click();
+    URL.revokeObjectURL(url);
+    setState((current) => markBackupExported(current));
+  }, [state]);
+  const backupNudgeVisible = useMemo(() => shouldShowBackupNudge(state), [state]);
+  const dismissBackupNudge = useCallback(() => setState((current) => dismissBackupNudgeFn(current)), []);
 
   const value: ArcadeContextValue = useMemo(
     () => ({
@@ -166,6 +212,12 @@ export function ArcadeProvider({ children }: { children: ReactNode }) {
       mascotProgress,
       exportData,
       importData,
+      importGeneration,
+      downloadBackup,
+      backupNudgeVisible,
+      dismissBackupNudge,
+      storageError,
+      dismissStorageError,
     }),
     [
       state.profiles,
@@ -187,6 +239,12 @@ export function ArcadeProvider({ children }: { children: ReactNode }) {
       mascotProgress,
       exportData,
       importData,
+      importGeneration,
+      downloadBackup,
+      backupNudgeVisible,
+      dismissBackupNudge,
+      storageError,
+      dismissStorageError,
     ]
   );
 

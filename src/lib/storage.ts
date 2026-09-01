@@ -2,7 +2,12 @@
 // the browser's localStorage so the app works fully offline.
 
 const STORAGE_KEY = "tims-arcade:v1";
-const MAX_PROFILES = 6;
+// Was 6 — an arbitrary round number with no real technical basis (nothing
+// about rendering an 8th CabinetCard/leaderboard row costs anything).
+// Raised to 8 to comfortably cover a bigger family or a small classroom set,
+// still small enough that the profile-picker grid (3 columns max) never
+// needs to scroll on a typical screen.
+const MAX_PROFILES = 8;
 
 export type GameId = "pacman" | "snake" | "invaders" | "fighter" | "soccer" | "racing";
 export type AccentColor = "coral" | "teal" | "sun" | "lime";
@@ -75,10 +80,15 @@ export interface ProfileStats {
   // a new best) and from any one game's `best` (this is a cumulative count
   // across all 6 games).
   personalBestBreaks: number;
+  // Whichever game this profile most recently finished a run of — powers
+  // the menu's "Continue: <Game>" shortcut. Not necessarily their favorite
+  // or most-played game, just the most recent one, same spirit as `last` in
+  // ProfileScoreRecord.
+  lastPlayedGame: GameId | null;
 }
 
 function defaultProfileStats(): ProfileStats {
-  return { totalPlays: 0, lastPlayedDate: null, currentStreak: 0, longestStreak: 0, personalBestBreaks: 0 };
+  return { totalPlays: 0, lastPlayedDate: null, currentStreak: 0, longestStreak: 0, personalBestBreaks: 0, lastPlayedGame: null };
 }
 
 function todayLocal(): string {
@@ -135,6 +145,7 @@ export interface ArcadeState {
   settings: ArcadeSettings;
   scores: Partial<Record<GameId, GameScoreRecord>>;
   profileStats: Partial<Record<string, ProfileStats>>;
+  backupNudge: BackupNudgeState;
 }
 
 // ---- Scoring model ---------------------------------------------------
@@ -168,6 +179,7 @@ function defaultState(): ArcadeState {
     settings: { ...DEFAULT_AUDIO_SETTINGS, reducedMotion: prefersReducedMotion() },
     scores: {},
     profileStats: {},
+    backupNudge: { lastExportedAt: null, dismissed: false },
   };
 }
 
@@ -183,7 +195,12 @@ export function loadState(): ArcadeState {
     // default for the missing field, instead of silently losing it to
     // `undefined`.
     const base = defaultState();
-    return { ...base, ...parsed, settings: { ...base.settings, ...parsed.settings } };
+    return {
+      ...base,
+      ...parsed,
+      settings: { ...base.settings, ...parsed.settings },
+      backupNudge: { ...base.backupNudge, ...parsed.backupNudge },
+    };
   } catch {
     return defaultState();
   }
@@ -233,14 +250,31 @@ function isPlausibleState(parsed: unknown): parsed is Partial<ArcadeState> {
   if (p.activeProfileId !== undefined && p.activeProfileId !== null && typeof p.activeProfileId !== "string") return false;
   if (p.settings !== undefined && (typeof p.settings !== "object" || p.settings === null || Array.isArray(p.settings))) return false;
   if (p.profileStats !== undefined && (typeof p.profileStats !== "object" || p.profileStats === null || Array.isArray(p.profileStats))) return false;
+  if (p.backupNudge !== undefined && (typeof p.backupNudge !== "object" || p.backupNudge === null || Array.isArray(p.backupNudge))) return false;
   return true;
+}
+
+// Every mutator in this file (createProfile, recordScore, etc.) calls
+// saveState() synchronously after computing its next state, so a write
+// failure here (private-mode Safari, quota exceeded, etc.) needs a way to
+// reach the UI without every single mutator having to plumb a return value
+// through. A single optional listener is the simplest thing that works: the
+// app still functions perfectly for the rest of the session (state stays in
+// memory either way), it just silently stops persisting — this listener is
+// what turns that silence into a visible, dismissible signal instead.
+type SaveFailureListener = () => void;
+let saveFailureListener: SaveFailureListener | null = null;
+export function setSaveFailureListener(fn: SaveFailureListener | null): void {
+  saveFailureListener = fn;
 }
 
 export function saveState(state: ArcadeState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
-    // storage unavailable (private mode, quota, etc.) — fail silently, app still works this session
+    // storage unavailable (private mode, quota, etc.) — app keeps working
+    // this session, but let anyone listening know the write didn't stick.
+    saveFailureListener?.();
   }
 }
 
@@ -298,9 +332,56 @@ export function importStateJson(json: string): ImportResult {
     ...base,
     ...candidate,
     settings: { ...base.settings, ...candidate.settings },
+    backupNudge: { ...base.backupNudge, ...candidate.backupNudge },
   };
   saveState(merged);
   return { ok: true, state: merged };
+}
+
+// A dated, human-recognizable filename (not a UUID/hash) so a downloads
+// folder full of these still reads as "which backup is which" at a glance.
+// Shared by SettingsPanel's manual export and the backup nudge banner below
+// so there's exactly one place that decides the filename shape.
+export function defaultBackupFilename(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `tims-arcade-backup-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+}
+
+// ---- Backup nudge --------------------------------------------------------
+// A one-time, permanently-dismissible reminder to actually use the
+// export/restore feature above — shipping a backup *button* doesn't help
+// anyone who doesn't know to look in Settings. Deliberately gentle: no
+// recurring nag, no modal, just a single dismissible line that never comes
+// back once dismissed OR once a first successful export has happened
+// (whichever comes first) — see `shouldShowBackupNudge`.
+export interface BackupNudgeState {
+  lastExportedAt: string | null;
+  dismissed: boolean;
+}
+
+export function markBackupExported(state: ArcadeState): ArcadeState {
+  const next: ArcadeState = { ...state, backupNudge: { ...state.backupNudge, lastExportedAt: new Date().toISOString() } };
+  saveState(next);
+  return next;
+}
+
+export function dismissBackupNudge(state: ArcadeState): ArcadeState {
+  const next: ArcadeState = { ...state, backupNudge: { ...state.backupNudge, dismissed: true } };
+  saveState(next);
+  return next;
+}
+
+// Only worth showing once there's actually something worth losing — an
+// arbitrary-but-reasonable "15 rounds played across every local profile"
+// threshold, rather than nagging a brand-new install that has nothing to
+// back up yet.
+const BACKUP_NUDGE_PLAYS_THRESHOLD = 15;
+
+export function shouldShowBackupNudge(state: ArcadeState): boolean {
+  if (state.backupNudge.dismissed || state.backupNudge.lastExportedAt) return false;
+  const totalPlays = Object.values(state.profileStats).reduce((sum, s) => sum + (s?.totalPlays ?? 0), 0);
+  return totalPlays >= BACKUP_NUDGE_PLAYS_THRESHOLD;
 }
 
 export function createProfile(state: ArcadeState, name: string, avatar?: string): ArcadeState {
@@ -427,6 +508,7 @@ export function recordScore(state: ArcadeState, gameId: GameId, profileId: strin
       currentStreak,
       longestStreak: Math.max(prevStats.longestStreak, currentStreak),
       personalBestBreaks: prevStats.personalBestBreaks + (isNewPersonalBest ? 1 : 0),
+      lastPlayedGame: gameId,
     },
   };
 
@@ -594,10 +676,12 @@ export interface MascotProgress {
   xpForNextLevel: number;
   /** xpIntoLevel / xpForNextLevel, clamped to [0, 1] — ready to drive a bar's width directly. */
   progress: number;
+  /** Index into MASCOT_TITLES (0-5) — which visual tier the mascot avatar should render. Not the same as `level`: several levels can share one tier. */
+  tierIndex: number;
 }
 
 function defaultMascotProgress(): MascotProgress {
-  return { level: 1, title: MASCOT_TITLES[0].title, xp: 0, xpIntoLevel: 0, xpForNextLevel: MASCOT_XP_STEP, progress: 0 };
+  return { level: 1, title: MASCOT_TITLES[0].title, xp: 0, xpIntoLevel: 0, xpForNextLevel: MASCOT_XP_STEP, progress: 0, tierIndex: 0 };
 }
 
 export function getMascotProgress(state: ArcadeState, profileId: string | null): MascotProgress {
@@ -620,6 +704,10 @@ export function getMascotProgress(state: ArcadeState, profileId: string | null):
   const xpIntoLevel = xp - xpAtLevelStart;
   const xpForNextLevel = xpAtNextLevel - xpAtLevelStart;
   const title = [...MASCOT_TITLES].reverse().find((t) => level >= t.minLevel)?.title ?? MASCOT_TITLES[0].title;
+  let tierIndex = 0;
+  for (let i = 0; i < MASCOT_TITLES.length; i++) {
+    if (level >= MASCOT_TITLES[i].minLevel) tierIndex = i;
+  }
 
   return {
     level,
@@ -628,6 +716,7 @@ export function getMascotProgress(state: ArcadeState, profileId: string | null):
     xpIntoLevel,
     xpForNextLevel,
     progress: xpForNextLevel > 0 ? Math.min(1, xpIntoLevel / xpForNextLevel) : 1,
+    tierIndex,
   };
 }
 

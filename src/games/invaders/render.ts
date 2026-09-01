@@ -62,6 +62,7 @@ interface BannerState {
   startTs: number;
   durationMs: number;
   fill: string;
+  size: number;
 }
 let banner: BannerState | null = null;
 
@@ -102,13 +103,18 @@ export function onBossDefeated(x: number, y: number, ts: number): void {
   particles.debris(x, y, 36);
   particles.sparks(x, y, 28);
   shake.trigger(16, 500);
-  banner = { text: "BOSS DEFEATED!", startTs: ts, durationMs: 2200, fill: "#ff4d8d" };
+  // Sized to match this arcade's other big "you won" banners (Kickoff
+  // Clash's GOAL! is 40, Rumble Ring's match-win scales with canvas height)
+  // rather than the plain 30 every banner here used to share — this is the
+  // single biggest moment in the game, per the shake/particle weight above,
+  // and its text should read that way too.
+  banner = { text: "BOSS DEFEATED!", startTs: ts, durationMs: 2200, fill: "#ff4d8d", size: 42 };
 }
 
 /** A normal (non-boss) wave cleared: just the banner, no shake — nothing was
  * destroyed in a way that should jolt the screen. */
 export function onWaveClear(ts: number): void {
-  banner = { text: "WAVE CLEAR!", startTs: ts, durationMs: 1600, fill: "#8bff56" };
+  banner = { text: "WAVE CLEAR!", startTs: ts, durationMs: 1600, fill: "#8bff56", size: 30 };
 }
 
 /** Bonus UFO shot down: a rare, special-feeling hit — sparks plus a
@@ -508,7 +514,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: StarDefenderState, ts
       banner = null;
     } else {
       const progress = elapsed / banner.durationMs;
-      drawBanner(ctx, banner.text, width / 2, height * 0.4, progress, { fill: banner.fill, size: 30 });
+      drawBanner(ctx, banner.text, width / 2, height * 0.4, progress, { fill: banner.fill, size: banner.size });
     }
   }
 }

@@ -1,21 +1,13 @@
 import { useRef, useState, type MouseEvent } from "react";
 import { useArcade } from "../context/ArcadeContext";
-import type { AccentColor, GameId, GameMeta } from "../lib/storage";
+import { GameIcon } from "../lib/gameIcons";
+import type { AccentColor, GameMeta } from "../lib/storage";
 
 const COLOR_MAP: Record<AccentColor, { text: string; bg: string; glow: string; ring: string }> = {
   coral: { text: "text-coral", bg: "bg-coral", glow: "shadow-glow-coral", ring: "ring-coral" },
   teal: { text: "text-teal", bg: "bg-teal", glow: "shadow-glow-teal", ring: "ring-teal" },
   sun: { text: "text-sun", bg: "bg-sun", glow: "shadow-glow-sun", ring: "ring-sun" },
   lime: { text: "text-lime", bg: "bg-lime", glow: "shadow-glow-lime", ring: "ring-lime" },
-};
-
-const GAME_ICON: Record<GameId, string> = {
-  pacman: "🟡",
-  invaders: "👾",
-  snake: "🐍",
-  fighter: "🥊",
-  soccer: "⚽",
-  racing: "🏎️",
 };
 
 interface CabinetCardProps {
@@ -52,61 +44,76 @@ export default function CabinetCard({ game, focused, onFocus, onSelect, comingSo
   const resetTilt = () => setTilt({ x: 0, y: 0 });
 
   return (
-    <button
-      ref={cardRef}
-      type="button"
-      onMouseEnter={onFocus}
-      onFocus={onFocus}
-      onClick={onSelect}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={resetTilt}
-      onBlur={resetTilt}
-      style={{
-        transform: `perspective(700px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) ${
-          focused ? "translateY(-4px) scale(1.03)" : ""
-        }`,
-      }}
-      // `outline-none` is deliberate: this card has its own high-contrast
-      // focus treatment below (solid white border + accent glow + lift),
-      // driven by the `focused` prop, which useGridNav keeps in sync with
-      // real keyboard/gamepad focus (see its onFocus wiring) — so Tab still
-      // shows a clearly visible indicator, just this bespoke one instead of
-      // the site's default sun-yellow outline.
-      className={`group relative w-full text-left rounded-cabinet border-4 p-4 sm:p-5 transition-[transform,box-shadow,border-color] duration-150 outline-none
-        bg-violet/80 border-violet-2
-        ${focused ? `border-white ${c.glow}` : "hover:-translate-y-0.5"}
-      `}
-    >
+    // The coin lives in this outer wrapper rather than inside the button,
+    // because it hops to a position *above* the card (-top-5) — the button
+    // itself needs `overflow-hidden` so the marquee band's square corners
+    // get clipped to match the card's rounded-cabinet shape, and that would
+    // clip the coin too if it were a child of the button instead of a
+    // sibling around it.
+    <div className="relative">
       {focused && (
-        <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-2xl animate-coin-hop" aria-hidden>
+        <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-2xl animate-coin-hop z-10" aria-hidden>
           🪙
         </span>
       )}
 
-      {/* marquee */}
-      <div
-        className={`rounded-full px-3 py-1 mb-3 text-center font-pixel text-[9px] sm:text-[10px] tracking-tight ${c.bg} text-ink ${
-          focused ? "animate-bulb-pulse" : ""
-        }`}
+      <button
+        ref={cardRef}
+        type="button"
+        onMouseEnter={onFocus}
+        onFocus={onFocus}
+        onClick={onSelect}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={resetTilt}
+        onBlur={resetTilt}
+        style={{
+          transform: `perspective(700px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) ${
+            focused ? "translateY(-4px) scale(1.03)" : ""
+          }`,
+        }}
+        // `outline-none` is deliberate: this card has its own high-contrast
+        // focus treatment below (solid white border + accent glow + lift),
+        // driven by the `focused` prop, which useGridNav keeps in sync with
+        // real keyboard/gamepad focus (see its onFocus wiring) — so Tab still
+        // shows a clearly visible indicator, just this bespoke one instead of
+        // the site's default sun-yellow outline.
+        className={`group relative w-full text-left rounded-cabinet border-4 overflow-hidden transition-[transform,box-shadow,border-color] duration-150 outline-none
+          bg-violet/80 border-violet-2
+          ${focused ? `border-white ${c.glow}` : "hover:-translate-y-0.5"}
+        `}
       >
-        {game.title.toUpperCase()}
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div className="text-5xl sm:text-6xl" aria-hidden>
-          {GAME_ICON[game.id]}
+        {/* marquee — a real cabinet-header-style band across the top of the
+            card, colored in the game's own accent, instead of a plain UI
+            card differentiated only by a focus glow. The icon sits in a
+            dark "bulb housing" chip so it stays legible in the game's own
+            accent color regardless of how bright the band behind it is. */}
+        <div className={`flex items-center gap-2 px-3 sm:px-4 py-2 ${c.bg}`}>
+          <span
+            className={`shrink-0 grid place-items-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-ink/85 ${
+              focused ? "animate-bulb-pulse" : ""
+            }`}
+          >
+            <GameIcon id={game.id} className={`w-5 h-5 sm:w-6 sm:h-6 ${c.text}`} />
+          </span>
+          <span className="min-w-0 flex-1 font-pixel text-[9px] sm:text-[10px] tracking-tight text-ink truncate">
+            {game.title.toUpperCase()}
+          </span>
+          <span
+            className={`shrink-0 w-2.5 h-2.5 rounded-full bg-ink/50 ${focused ? "animate-bulb-pulse" : ""}`}
+            aria-hidden
+          />
         </div>
-        <div className={`w-3 h-3 rounded-full ${c.bg} ${focused ? "animate-bulb-pulse" : ""}`} aria-hidden />
-      </div>
 
-      <p className="mt-3 font-display font-bold text-cloud text-lg">{game.title}</p>
-      <p className="text-cloud/60 text-sm">{game.subtitle}</p>
+        <div className="p-4 sm:p-5 pt-3">
+          <p className="text-cloud/60 text-sm">{game.subtitle}</p>
+        </div>
 
-      {comingSoon && (
-        <span className="absolute top-3 right-3 font-pixel text-[8px] bg-ink/80 text-cloud/80 px-2 py-1 rounded-full">
-          SOON
-        </span>
-      )}
-    </button>
+        {comingSoon && (
+          <span className="absolute top-3 right-3 font-pixel text-[8px] bg-ink/80 text-cloud/80 px-2 py-1 rounded-full">
+            SOON
+          </span>
+        )}
+      </button>
+    </div>
   );
 }

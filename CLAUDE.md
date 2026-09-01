@@ -43,6 +43,20 @@ Tim's Arcade — a kid-friendly retro arcade of canvas mini-games. React 19 + Vi
 
 This split was retrofitted onto all 6 games (they originally interleaved logic and rendering in one `tick()` function per game) specifically so a game's rules can be unit-tested or swapped out without touching canvas code, and so the rendering/juice can be reworked without risk of changing game balance.
 
+## Typography
+
+Three type families, each with one job — written down here because the rule previously only existed as scattered class names across a dozen files:
+- **`font-display`** (`Lilita One`) — screen titles, big numbers/scores, banner/celebration text, and anything meant to feel like the loudest thing on screen.
+- **`font-pixel`** (`Press Start 2P`) — compact stat/HUD-style labels only (play counts, XP readouts, "WAVE 3", badge counters) — always small (`text-[8px]` to `text-[10px]`), never body copy, since it's illegible at normal paragraph sizes.
+- **`font-body`** (`Nunito`, the default via `body`'s `font-family`) — everything else: instructions, descriptions, button labels that aren't a HUD stat, settings copy.
+
+If a new screen needs a type choice that doesn't obviously fit one of these three, default to `font-body` and reconsider whether it's really a "loud" (`display`) or "HUD" (`pixel`) moment before reaching for one of the other two.
+
+## Design/architecture patterns worth reusing
+
+- **Derived, not stored** — `getOverallScore`/`getOverallScoreboard`, `getUnlockedAchievementIds`, and `getMascotProgress` (the cross-game level/title/XP readout) all compute their entire value live from `ArcadeState` rather than persisting a dedicated field, specifically so nothing can drift out of sync or need a migration when the derivation logic changes. Prefer this over a new stored field for any new "stat-like" feature unless the value is genuinely expensive to recompute.
+- **Accent-colored, currentColor SVG icons** (`src/lib/gameIcons.tsx`, `src/components/MascotAvatar.tsx`) — small inline SVGs that draw with `fill/stroke="currentColor"` and take their color from a `text-{accent}` class or a CSS custom property, rather than a hardcoded hex. This is the pattern to follow for any new icon/mascot art rather than sourcing another asset pack — no new asset curation needed, and the icon automatically stays correct if a game's accent color ever changes.
+
 ## TypeScript
 
 Strict mode (`tsconfig.app.json`), `tsc -b` project references, no `any` except where genuinely unavoidable around canvas/DOM APIs. One recurring pattern worth knowing: inside a game's `<Name>.tsx`, the `requestAnimationFrame` loop is typically set up as `const ctx = canvas?.getContext("2d"); if (!ctx) return; function tick(ts) { ... draw(ctx!, ...) }` — TypeScript can't narrow `ctx` across that nested-function closure boundary even though it's checked non-null just above, so a `ctx!` non-null assertion (with a short comment) is the accepted workaround, not a bug to "fix" by restructuring.

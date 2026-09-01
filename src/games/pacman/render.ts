@@ -170,6 +170,57 @@ function drawPlayerSprite(ctx: CanvasRenderingContext2D, px: number, py: number,
   return true;
 }
 
+// A cached offscreen render of just the wall tiles, reused every frame
+// instead of re-running the ROWS*COLS fillRect loop 60x/sec — the maze
+// layout only actually changes once per wave (see freshRound in engine.ts),
+// so this only needs to be rebuilt when the maze array reference or the
+// canvas's cell size changes, same "build once, blit every frame" idea as
+// getPlayerLayer above.
+let wallLayer: HTMLCanvasElement | null = null;
+let wallLayerMaze: boolean[][] | null = null;
+let wallLayerCell = 0;
+let wallLayerOffX = 0;
+let wallLayerOffY = 0;
+function getWallLayer(maze: boolean[][], cell: number, offX: number, offY: number, width: number, height: number): HTMLCanvasElement {
+  const stale = wallLayer === null || wallLayerMaze !== maze || wallLayerCell !== cell || wallLayerOffX !== offX || wallLayerOffY !== offY;
+  if (!wallLayer) wallLayer = document.createElement("canvas");
+  if (wallLayer.width !== width || wallLayer.height !== height) {
+    wallLayer.width = width;
+    wallLayer.height = height;
+  }
+  if (stale) {
+    const lctx = wallLayer.getContext("2d")!;
+    lctx.clearRect(0, 0, width, height);
+    lctx.fillStyle = "#3d2585";
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (maze[r][c]) lctx.fillRect(offX + c * cell + 1, offY + r * cell + 1, cell - 2, cell - 2);
+      }
+    }
+    wallLayerMaze = maze;
+    wallLayerCell = cell;
+    wallLayerOffX = offX;
+    wallLayerOffY = offY;
+  }
+  return wallLayer;
+}
+
+// Dot/power keys are stable strings ("r,c") until eaten, so parsing them
+// back into numbers is repeated work every single frame for every dot still
+// on the board — memoized here since the same key gets asked for over and
+// over across a wave rather than being freshly minted each frame.
+const parsedCellCache = new Map<string, { r: number; c: number }>();
+function parseCellKey(key: string): { r: number; c: number } {
+  let cached = parsedCellCache.get(key);
+  if (!cached) {
+    const [r, c] = key.split(",").map(Number);
+    cached = { r, c };
+    parsedCellCache.set(key, cached);
+  }
+  return cached;
+}
+
+
 export function draw(ctx: CanvasRenderingContext2D, state: MazeState, ts: number, width: number, height: number): void {
   const dtMs = lastDrawTs === null ? 16.7 : Math.max(0, ts - lastDrawTs);
   lastDrawTs = ts;
@@ -197,7 +248,13 @@ export function draw(ctx: CanvasRenderingContext2D, state: MazeState, ts: number
     const cx = offX + (ev.c + 0.5) * cell;
     const cy = offY + (ev.r + 0.5) * cell;
     particles.debris(cx, cy);
-    shake.trigger(cell * 0.5, 320);
+    // Flat magnitude, matching every sibling game's "hit taken, run
+    // continues" shake (Wiggle Worm's death = 10, Star Defender's hit = 9,
+    // Turbo Dash's crash = 10) — this used to scale with cell size
+    // (`cell * 0.5`), which at this maze's normal cell size worked out to
+    // ~15-17, uncomfortably close to Rumble Ring's KO-tier 20 for what's
+    // actually a lesser event here (a life lost, not the run ending).
+    shake.trigger(10, 320);
   }
 
   ctx.clearRect(0, 0, width, height);
@@ -207,18 +264,11 @@ export function draw(ctx: CanvasRenderingContext2D, state: MazeState, ts: number
   ctx.save();
   shake.apply(ctx);
 
-  ctx.fillStyle = "#3d2585";
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      if (state.maze[r][c]) {
-        ctx.fillRect(offX + c * cell + 1, offY + r * cell + 1, cell - 2, cell - 2);
-      }
-    }
-  }
+  ctx.drawImage(getWallLayer(state.maze, cell, offX, offY, width, height), 0, 0);
 
   ctx.fillStyle = "#ffd43b";
   state.dots.forEach((key) => {
-    const [r, c] = key.split(",").map(Number);
+    const { r, c } = parseCellKey(key);
     const dx = offX + (c + 0.5) * cell;
     const dy = offY + (r + 0.5) * cell;
     if (isReady(SPRITES.dotGem)) {
@@ -233,7 +283,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: MazeState, ts: number
 
   const pulse = 0.7 + 0.3 * Math.sin(ts / 120);
   state.power.forEach((key) => {
-    const [r, c] = key.split(",").map(Number);
+    const { r, c } = parseCellKey(key);
     const px = offX + (c + 0.5) * cell;
     const py = offY + (r + 0.5) * cell;
     const pr = cell * 0.32 * pulse;

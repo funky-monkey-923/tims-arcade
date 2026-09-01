@@ -52,30 +52,14 @@ function VolumeRow({ label, icon, volume, muted, onVolumeChange, onMuteToggle }:
 // audio mix controls (and, going forward, other app-wide accessibility
 // settings like reduced motion) in one predictable place rather than
 // scattered across screens.
-// A dated, human-recognizable filename (not a UUID/hash) so a downloads
-// folder full of these still reads as "which backup is which" at a glance.
-function backupFilename(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `tims-arcade-backup-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
-}
 
 export default function SettingsPanel({ onClose }: SettingsPanelProps) {
-  const { settings, updateSettings, exportData, importData } = useArcade();
+  const { settings, updateSettings, downloadBackup, importData } = useArcade();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importMessage, setImportMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
   const handleExport = () => {
-    // A plain in-memory Blob URL, not a network round-trip — this app has no
-    // backend, so "download my data" is just "hand back the JSON I already
-    // have," same spirit as saveState() itself.
-    const blob = new Blob([exportData()], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = backupFilename();
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBackup();
     engine.playSfx("select");
   };
 

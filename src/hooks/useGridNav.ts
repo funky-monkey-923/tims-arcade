@@ -13,12 +13,18 @@ export interface UseGridNavOptions {
 // Grid keyboard/gamepad navigation for the cabinet menu, profile picker, etc.
 // `columns` can be a function so callers can respond to responsive layouts.
 export function useGridNav({ count, columns, onConfirm, onCancel, enabled = true }: UseGridNavOptions): [number, Dispatch<SetStateAction<number>>] {
-  const [focused, setFocused] = useState(0);
-  const countRef = useRef(count);
-  countRef.current = count;
+  const [rawFocused, setFocused] = useState(0);
+  // Clamped for rendering/lookups (e.g. if the grid shrinks out from under
+  // the current index) without needing a "setState during an effect just to
+  // correct another piece of state" round-trip — derived straight from
+  // render inputs instead, per React's own guidance on this exact pattern.
+  const focused = count > 0 ? Math.min(rawFocused, count - 1) : rawFocused;
 
+  const countRef = useRef(count);
+  const focusedRef = useRef(focused);
   useEffect(() => {
-    if (focused >= count && count > 0) setFocused(count - 1);
+    countRef.current = count;
+    focusedRef.current = focused;
   }, [count, focused]);
 
   useEffect(() => {
@@ -34,11 +40,14 @@ export function useGridNav({ count, columns, onConfirm, onCancel, enabled = true
         if (next !== f) engine.playSfx("move");
         return next;
       });
-      if (action === "CONFIRM") onConfirm?.(focused);
+      // Reads the ref (updated by the effect above, kept in sync every
+      // render) rather than closing over `focused` directly, so this
+      // subscription doesn't need to be torn down and rebuilt on every
+      // single focus move — only when the grid's shape or callbacks change.
+      if (action === "CONFIRM") onConfirm?.(focusedRef.current);
       if (action === "BACK") onCancel?.();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, columns, onConfirm, onCancel, focused]);
+  }, [enabled, columns, onConfirm, onCancel]);
 
   return [focused, setFocused];
 }

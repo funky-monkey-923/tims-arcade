@@ -7,6 +7,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#1a1140" />
     <meta name="description" content="Tim's Arcade — six easy, colorful mini-games for kids. Play with keyboard, mouse, touch, or a controller." />
+    <!-- Open Graph / Twitter card so a link to this actually looks like
+         something when shared (Discord, Slack, iMessage, etc.) instead of a
+         bare blue link — this app is about to go out to real testers, not
+         just live in a private repo. Reuses the maskable icon as the share
+         image rather than authoring a dedicated 1200x630 banner, since it's
+         already the closest thing this app has to "official art" at a
+         decent resolution. Deliberately a bare relative path (not a
+         leading-slash root path, and not run through Vite's own asset
+         pipeline the way <link>/<script> tags are) — <meta content="…">
+         isn't rewritten by Vite's base-path handling the way href/src is,
+         so a root-relative path would incorrectly point at the domain root
+         instead of this GitHub Pages project subpath. A same-directory
+         relative path resolves correctly against index.html's own final
+         location either way. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Tim's Arcade" />
+    <meta property="og:description" content="Six easy, colorful mini-games for kids. Zero servers, zero sign-ups, 100% built by learning Claude, Claude Code, and AI-assisted development from scratch." />
+    <meta property="og:image" content="icon-512.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Tim's Arcade" />
+    <meta name="twitter:description" content="Six easy, colorful mini-games for kids. Zero servers, zero sign-ups." />
+    <meta name="twitter:image" content="icon-512.png" />
     <!-- iOS ignores the web manifest for "Add to Home Screen" polish, so these two are set explicitly. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Tim's Arcade" />
@@ -17,8 +39,58 @@
       href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=Press+Start+2P&display=swap"
       rel="stylesheet"
     />
+    <!-- Plain inline CSS (no Tailwind/webfont dependency) for the splash
+         below, so it paints correctly on the very first frame regardless of
+         whether the stylesheet/webfonts have loaded yet — the whole point
+         of a splash is to cover exactly that gap. Removed by a tiny script
+         in App.tsx's first effect, once React has actually mounted. -->
+    <style>
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: radial-gradient(ellipse at 50% -10%, #3d2585 0%, #1a1140 55%, #150c33 100%);
+        color: #f5f5ff;
+        font-family: system-ui, sans-serif;
+      }
+      #splash-mark {
+        width: 56px;
+        height: 56px;
+        border-radius: 999px;
+        background: #ff4d8d;
+        animation: splash-pulse 1.1s ease-in-out infinite;
+      }
+      #splash-text {
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        font-size: 15px;
+        opacity: 0.8;
+      }
+      @keyframes splash-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(0.8);
+          opacity: 0.6;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splash-mark {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="splash"><div id="splash-mark"></div><div id="splash-text">TIM'S ARCADE</div></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
