@@ -1,10 +1,16 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { controls } from "../../lib/input";
 import { engine as audioEngine } from "../../lib/audio";
 import * as racingEngine from "./engine";
-import { MAX_SPEED, type RacingState } from "./engine";
+import { MAX_SPEED, type Difficulty, type RacingState } from "./engine";
 import { draw } from "./render";
 import type { GameComponentProps } from "../engineTypes";
+
+const DIFFICULTY_OPTIONS: { id: Difficulty; label: string; blurb: string }[] = [
+  { id: "easy", label: "Easy", blurb: "Cruisin'" },
+  { id: "medium", label: "Medium", blurb: "Balanced" },
+  { id: "hard", label: "Hard", blurb: "Full send" },
+];
 
 // The only React/canvas/DOM-touching file for this game — owns the canvas
 // element, reads the shared `controls` object once per frame, and wires
@@ -15,10 +21,14 @@ export default function TurboDash({ width, height, paused, onScoreUpdate, onGame
   const stateRef = useRef<RacingState | null>(null);
   const rafRef = useRef<number>(0);
   const lastTsRef = useRef<number>(0);
+  // Pre-race setup screen: while this is null, createState() hasn't run
+  // yet and the rAF loop stays idle — see the effect below.
+  const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
 
   useEffect(() => {
-    stateRef.current = racingEngine.createState(width, height);
-  }, [width, height]);
+    if (!difficulty) return;
+    stateRef.current = racingEngine.createState(width, height, difficulty);
+  }, [width, height, difficulty]);
 
   // Looping engine hum: started on mount, stopped on unmount, independent
   // of the rAF-loop effect below (mirrors the original component).
@@ -28,6 +38,7 @@ export default function TurboDash({ width, height, paused, onScoreUpdate, onGame
   }, []);
 
   useEffect(() => {
+    if (!difficulty) return undefined;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!ctx) return undefined;
@@ -50,13 +61,18 @@ export default function TurboDash({ width, height, paused, onScoreUpdate, onGame
         if (events.laneChange) audioEngine.playSfx("skid");
         if (events.nitroActivated) audioEngine.playSfx("powerup");
         if (events.obstacleSmashed) audioEngine.playSfx("coin");
+        if (events.lapComplete) audioEngine.playSfx("clear");
         audioEngine.setEngineRate(0.7 + (state.speed / MAX_SPEED) * 0.9);
         if (events.score !== undefined) onScoreUpdate(events.score);
         if (events.crashed) audioEngine.playSfx("hit");
+        // Draw this final frame (showing the "Finished"/"DNF" banner from
+        // render.ts) before handing off to GameShell's own game-over
+        // overlay, rather than cutting straight to it.
+        draw(ctx!, state, ts, width, height);
         if (events.gameOver !== undefined) {
           onGameOver(events.gameOver);
-          return;
         }
+        return;
       }
 
       draw(ctx!, state, ts, width, height);
@@ -68,16 +84,37 @@ export default function TurboDash({ width, height, paused, onScoreUpdate, onGame
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [width, height, paused, onScoreUpdate, onGameOver]);
+  }, [width, height, paused, onScoreUpdate, onGameOver, difficulty]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      className="block touch-none"
-      role="img"
-      aria-label="Turbo Dash racing game"
-    />
+    <div className="relative" style={{ width, height }}>
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        className="block touch-none"
+        role="img"
+        aria-label="Turbo Dash racing game"
+      />
+      {!difficulty && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-night/70 p-6 text-center">
+          <p className="font-display font-extrabold text-2xl text-sun">Pick your difficulty</p>
+          <p className="text-cloud/70 max-w-xs">Race 3 laps against Red Comet, Blue Blaze, and Gold Rush!</p>
+          <div className="flex gap-3">
+            {DIFFICULTY_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setDifficulty(opt.id)}
+                className="flex flex-col items-center rounded-cabinet border-4 border-violet-2 bg-violet/80 px-5 py-3 font-display font-extrabold hover:bg-violet-2 transition-colors"
+              >
+                <span>{opt.label}</span>
+                <span className="text-xs font-bold text-cloud/70">{opt.blurb}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

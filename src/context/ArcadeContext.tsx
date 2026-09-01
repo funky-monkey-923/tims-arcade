@@ -10,6 +10,10 @@ import {
   getProfile,
   getOverallScore,
   getOverallScoreboard,
+  getProfileStats,
+  getUnlockedAchievementIds,
+  getRecentHighlights,
+  ACHIEVEMENTS,
   GAMES,
   MAX_PROFILES,
   type GameId,
@@ -18,6 +22,10 @@ import {
   type Profile,
   type OverallScoreEntry,
   type ArcadeSettings,
+  type ProfileStats,
+  type AchievementId,
+  type AchievementMeta,
+  type HighlightEntry,
 } from "../lib/storage";
 import { engine } from "../lib/audio";
 
@@ -40,6 +48,14 @@ interface ArcadeContextValue {
   overallScore: number;
   /** Every local profile's Overall Score, ranked highest first. */
   overallScoreboard: OverallScoreEntry[];
+  /** Active profile's play stats (streaks, total plays, etc). Zeroed if no active profile. */
+  profileStats: ProfileStats;
+  /** The full achievement catalog (locked + unlocked) — pair with unlockedAchievementIds. */
+  achievements: AchievementMeta[];
+  /** IDs of achievements the active profile has unlocked. */
+  unlockedAchievementIds: AchievementId[];
+  /** Recent activity across every profile, newest first — for the menu's attract-mode ticker. */
+  recentHighlights: HighlightEntry[];
 }
 
 const ArcadeCtx = createContext<ArcadeContextValue | null>(null);
@@ -85,6 +101,9 @@ export function ArcadeProvider({ children }: { children: ReactNode }) {
   const statsFor = useCallback((gameId: GameId) => getGameStats(state, gameId, state.activeProfileId), [state]);
   const overallScore = useMemo(() => getOverallScore(state, state.activeProfileId), [state]);
   const overallScoreboard = useMemo(() => getOverallScoreboard(state), [state]);
+  const profileStats = useMemo(() => getProfileStats(state, state.activeProfileId), [state]);
+  const unlockedAchievementIds = useMemo(() => getUnlockedAchievementIds(state, state.activeProfileId), [state]);
+  const recentHighlights = useMemo(() => getRecentHighlights(state), [state]);
 
   const value: ArcadeContextValue = {
     profiles: state.profiles,
@@ -102,6 +121,10 @@ export function ArcadeProvider({ children }: { children: ReactNode }) {
     statsFor,
     overallScore,
     overallScoreboard,
+    profileStats,
+    achievements: ACHIEVEMENTS,
+    unlockedAchievementIds,
+    recentHighlights,
   };
 
   return <ArcadeCtx.Provider value={value}>{children}</ArcadeCtx.Provider>;

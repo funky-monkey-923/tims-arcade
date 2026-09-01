@@ -1,3 +1,5 @@
+import { useRef, useState, type MouseEvent } from "react";
+import { useArcade } from "../context/ArcadeContext";
 import type { AccentColor, GameId, GameMeta } from "../lib/storage";
 
 const COLOR_MAP: Record<AccentColor, { text: string; bg: string; glow: string; ring: string }> = {
@@ -28,22 +30,51 @@ interface CabinetCardProps {
 // strip that lights up on focus, and a coin that hops onto whichever
 // cabinet currently has keyboard/gamepad focus.
 export default function CabinetCard({ game, focused, onFocus, onSelect, comingSoon }: CabinetCardProps) {
+  const { settings } = useArcade();
   const c = COLOR_MAP[game.color] || COLOR_MAP.coral;
+  const cardRef = useRef<HTMLButtonElement | null>(null);
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+
+  // A subtle cursor-following 3D tilt — purely a mouse-hover nicety, so it's
+  // skipped outright when reduced motion is on rather than trying to tone
+  // it down, and it resets to flat on mouse-leave so it never gets "stuck"
+  // mid-tilt.
+  const handleMouseMove = (e: MouseEvent<HTMLButtonElement>) => {
+    if (settings.reducedMotion) return;
+    const el = cardRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width - 0.5;
+    const py = (e.clientY - rect.top) / rect.height - 0.5;
+    const max = 6; // degrees
+    setTilt({ x: -py * max, y: px * max });
+  };
+  const resetTilt = () => setTilt({ x: 0, y: 0 });
+
   return (
     <button
+      ref={cardRef}
       type="button"
       onMouseEnter={onFocus}
       onFocus={onFocus}
       onClick={onSelect}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={resetTilt}
+      onBlur={resetTilt}
+      style={{
+        transform: `perspective(700px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) ${
+          focused ? "translateY(-4px) scale(1.03)" : ""
+        }`,
+      }}
       // `outline-none` is deliberate: this card has its own high-contrast
       // focus treatment below (solid white border + accent glow + lift),
       // driven by the `focused` prop, which useGridNav keeps in sync with
       // real keyboard/gamepad focus (see its onFocus wiring) — so Tab still
       // shows a clearly visible indicator, just this bespoke one instead of
       // the site's default sun-yellow outline.
-      className={`group relative w-full text-left rounded-cabinet border-4 p-4 sm:p-5 transition-all duration-150 outline-none
+      className={`group relative w-full text-left rounded-cabinet border-4 p-4 sm:p-5 transition-[transform,box-shadow,border-color] duration-150 outline-none
         bg-violet/80 border-violet-2
-        ${focused ? `border-white ${c.glow} -translate-y-1 scale-[1.03]` : "hover:-translate-y-0.5"}
+        ${focused ? `border-white ${c.glow}` : "hover:-translate-y-0.5"}
       `}
     >
       {focused && (

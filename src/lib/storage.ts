@@ -48,11 +48,49 @@ export interface OverallBestEntry extends ScoreEntry {
 export interface ProfileScoreRecord {
   best: ScoreEntry | null;
   last: ScoreEntry | null;
+  // Most-recent-last, capped at HISTORY_LIMIT (see recordScore) — just
+  // enough to draw a short trend sparkline on the Leaderboard, not a full
+  // audit log.
+  history: ScoreEntry[];
 }
+
+const HISTORY_LIMIT = 10;
 
 export interface GameScoreRecord {
   overallBest: OverallBestEntry | null;
   byProfile: Record<string, ProfileScoreRecord>;
+}
+
+// Per-profile stats that aren't tied to any one game — the raw ingredients
+// the achievements catalog below checks against. Kept separate from
+// `Profile` itself (which is just identity: name/avatar/color) so identity
+// and stats can evolve independently.
+export interface ProfileStats {
+  totalPlays: number;
+  lastPlayedDate: string | null; // YYYY-MM-DD, local calendar date
+  currentStreak: number;
+  longestStreak: number;
+  // How many times, across every game, this profile has beaten its own
+  // previous personal best. Distinct from `totalPlays` (most runs don't set
+  // a new best) and from any one game's `best` (this is a cumulative count
+  // across all 6 games).
+  personalBestBreaks: number;
+}
+
+function defaultProfileStats(): ProfileStats {
+  return { totalPlays: 0, lastPlayedDate: null, currentStreak: 0, longestStreak: 0, personalBestBreaks: 0 };
+}
+
+function todayLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function daysBetween(a: string, b: string): number {
+  // Both are YYYY-MM-DD; parsing as UTC midnight keeps this immune to
+  // DST shifts messing with the day count.
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / msPerDay);
 }
 
 // App-wide settings, separate from any one profile's data (a household
@@ -96,6 +134,7 @@ export interface ArcadeState {
   activeProfileId: string | null;
   settings: ArcadeSettings;
   scores: Partial<Record<GameId, GameScoreRecord>>;
+  profileStats: Partial<Record<string, ProfileStats>>;
 }
 
 // ---- Scoring model ---------------------------------------------------
@@ -118,6 +157,8 @@ export interface GameStats {
   overallBest: OverallBestEntry | null;
   myBest: ScoreEntry | null;
   myLast: ScoreEntry | null;
+  /** Most-recent-last, capped at 10 — see ProfileScoreRecord.history. */
+  myHistory: ScoreEntry[];
 }
 
 function defaultState(): ArcadeState {
@@ -126,6 +167,7 @@ function defaultState(): ArcadeState {
     activeProfileId: null,
     settings: { ...DEFAULT_AUDIO_SETTINGS, reducedMotion: prefersReducedMotion() },
     scores: {},
+    profileStats: {},
   };
 }
 
@@ -160,6 +202,7 @@ function isPlausibleState(parsed: unknown): parsed is Partial<ArcadeState> {
   if (p.scores !== undefined && (typeof p.scores !== "object" || p.scores === null || Array.isArray(p.scores))) return false;
   if (p.activeProfileId !== undefined && p.activeProfileId !== null && typeof p.activeProfileId !== "string") return false;
   if (p.settings !== undefined && (typeof p.settings !== "object" || p.settings === null || Array.isArray(p.settings))) return false;
+  if (p.profileStats !== undefined && (typeof p.profileStats !== "object" || p.profileStats === null || Array.isArray(p.profileStats))) return false;
   return true;
 }
 
@@ -191,7 +234,9 @@ export function deleteProfile(state: ArcadeState, profileId: string): ArcadeStat
   const profiles = state.profiles.filter((p) => p.id !== profileId);
   const activeProfileId = state.activeProfileId === profileId ? null : state.activeProfileId;
   const scores = pruneProfileFromScores(state.scores, profileId, profiles);
-  const next: ArcadeState = { ...state, profiles, activeProfileId, scores };
+  const profileStats = { ...state.profileStats };
+  delete profileStats[profileId];
+  const next: ArcadeState = { ...state, profiles, activeProfileId, scores, profileStats };
   saveState(next);
   return next;
 }
@@ -262,18 +307,47 @@ export function recordScore(state: ArcadeState, gameId: GameId, profileId: strin
   const game: GameScoreRecord = scores[gameId] ? { ...scores[gameId]! } : { overallBest: null, byProfile: {} };
   game.byProfile = { ...game.byProfile };
 
-  const prevForProfile = game.byProfile[profileId] ?? { best: null, last: null };
-  const best = prevForProfile.best && prevForProfile.best.value >= value ? prevForProfile.best : { value, date: now };
-  game.byProfile[profileId] = { best, last: { value, date: now } };
+  const prevForProfile = game.byProfile[profileId] ?? { best: null, last: null, history: [] };
+  const isNewPersonalBest = !prevForProfile.best || value > prevForProfile.best.value;
+  const best = isNewPersonalBest ? { value, date: now } : prevForProfile.best;
+  const history = [...prevForProfile.history, { value, date: now }].slice(-HISTORY_LIMIT);
+  game.byProfile[profileId] = { best, last: { value, date: now }, history };
 
   if (!game.overallBest || value > game.overallBest.value) {
     game.overallBest = { value, profileId, profileName: profile.name, avatar: profile.avatar, date: now };
   }
 
   scores[gameId] = game;
-  const next: ArcadeState = { ...state, scores };
+
+  // Roll the profile-wide play stats forward: a run today either extends
+  // yesterday's streak, starts a fresh one (first play, or a gap of 2+
+  // days), or is a same-day repeat (streak unchanged either way).
+  const prevStats = state.profileStats[profileId] ?? defaultProfileStats();
+  const today = todayLocal();
+  let currentStreak = prevStats.currentStreak;
+  if (prevStats.lastPlayedDate === null || daysBetween(prevStats.lastPlayedDate, today) >= 2) {
+    currentStreak = 1;
+  } else if (daysBetween(prevStats.lastPlayedDate, today) === 1) {
+    currentStreak = prevStats.currentStreak + 1;
+  } // daysBetween === 0 (same day): streak unchanged
+  const profileStats: ArcadeState["profileStats"] = {
+    ...state.profileStats,
+    [profileId]: {
+      totalPlays: prevStats.totalPlays + 1,
+      lastPlayedDate: today,
+      currentStreak,
+      longestStreak: Math.max(prevStats.longestStreak, currentStreak),
+      personalBestBreaks: prevStats.personalBestBreaks + (isNewPersonalBest ? 1 : 0),
+    },
+  };
+
+  const next: ArcadeState = { ...state, scores, profileStats };
   saveState(next);
   return next;
+}
+
+export function getProfileStats(state: ArcadeState, profileId: string | null): ProfileStats {
+  return (profileId && state.profileStats[profileId]) || defaultProfileStats();
 }
 
 export function getGameStats(state: ArcadeState, gameId: GameId, profileId: string | null): GameStats {
@@ -284,6 +358,7 @@ export function getGameStats(state: ArcadeState, gameId: GameId, profileId: stri
     overallBest,
     myBest: mine?.best ?? null,
     myLast: mine?.last ?? null,
+    myHistory: mine?.history ?? [],
   };
 }
 
@@ -321,6 +396,85 @@ export function getOverallScoreboard(state: ArcadeState): OverallScoreEntry[] {
       return { profile, overallScore: getOverallScore(state, profile.id), gamesPlayed };
     })
     .sort((a, b) => b.overallScore - a.overallScore);
+}
+
+// ---- Recent highlights --------------------------------------------------
+// A lightweight "recent activity" feed for the menu's attract-mode ticker —
+// built from data already stored (each profile's `last` play per game),
+// not a separate event log, so it stays in sync automatically and doesn't
+// grow storage. Distinguishes "just set a new best" from "just played"
+// by checking whether `last` and `best` are the same run.
+export interface HighlightEntry {
+  profileName: string;
+  avatar: string;
+  gameTitle: string;
+  value: number;
+  date: string;
+  isNewBest: boolean;
+}
+
+export function getRecentHighlights(state: ArcadeState, limit = 8): HighlightEntry[] {
+  const profileById = new Map(state.profiles.map((p) => [p.id, p]));
+  const entries: HighlightEntry[] = [];
+  for (const meta of GAMES) {
+    const game = state.scores[meta.id];
+    if (!game) continue;
+    for (const [profileId, record] of Object.entries(game.byProfile)) {
+      const profile = profileById.get(profileId);
+      if (!profile || !record.last) continue;
+      const isNewBest = !!record.best && record.best.value === record.last.value && record.best.date === record.last.date;
+      entries.push({
+        profileName: profile.name,
+        avatar: profile.avatar,
+        gameTitle: meta.title,
+        value: record.last.value,
+        date: record.last.date,
+        isNewBest,
+      });
+    }
+  }
+  return entries.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).slice(0, limit);
+}
+
+// ---- Achievements ------------------------------------------------------
+// A small, fixed badge catalog — deliberately not data-driven/extensible
+// (no admin UI, no remote config), since this is a local single-family
+// arcade, not a live-ops game. Unlock state is never stored: it's always
+// derived from `scores`/`profileStats` (see getUnlockedAchievementIds), the
+// same "derive, don't duplicate" approach as getOverallScore — so there's
+// no way for stored unlock flags to drift out of sync with the stats that
+// actually earned them.
+export type AchievementId = "rookie" | "world-tour" | "streak-3" | "streak-7" | "pb-x3" | "top-player" | "century";
+
+export interface AchievementMeta {
+  id: AchievementId;
+  title: string;
+  description: string;
+  icon: string;
+}
+
+export const ACHIEVEMENTS: AchievementMeta[] = [
+  { id: "rookie", title: "Arcade Rookie", description: "Play your first game", icon: "🎮" },
+  { id: "world-tour", title: "World Tour", description: "Play every game in the arcade at least once", icon: "🗺️" },
+  { id: "streak-3", title: "On a Roll", description: "Play 3 days in a row", icon: "🔥" },
+  { id: "streak-7", title: "Week-Long Legend", description: "Play 7 days in a row", icon: "🌟" },
+  { id: "pb-x3", title: "Personal Best Hunter", description: "Beat your own best score 3 times", icon: "📈" },
+  { id: "top-player", title: "Top Player", description: "Hold the arcade-best score in any game", icon: "👑" },
+  { id: "century", title: "Century Club", description: "Play 100 rounds total", icon: "💯" },
+];
+
+export function getUnlockedAchievementIds(state: ArcadeState, profileId: string | null): AchievementId[] {
+  if (!profileId) return [];
+  const stats = getProfileStats(state, profileId);
+  const unlocked: AchievementId[] = [];
+  if (stats.totalPlays >= 1) unlocked.push("rookie");
+  if (GAMES.every((g) => state.scores[g.id]?.byProfile?.[profileId] != null)) unlocked.push("world-tour");
+  if (stats.longestStreak >= 3) unlocked.push("streak-3");
+  if (stats.longestStreak >= 7) unlocked.push("streak-7");
+  if (stats.personalBestBreaks >= 3) unlocked.push("pb-x3");
+  if (GAMES.some((g) => state.scores[g.id]?.overallBest?.profileId === profileId)) unlocked.push("top-player");
+  if (stats.totalPlays >= 100) unlocked.push("century");
+  return unlocked;
 }
 
 export { MAX_PROFILES };
