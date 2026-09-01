@@ -1,12 +1,24 @@
 import { Component, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useArcade } from "../context/ArcadeContext";
 import { engine } from "../lib/audio";
+import type { MusicMood } from "../lib/audio";
 import { subscribeMenuInput } from "../lib/input";
 import TouchControls from "../components/TouchControls";
 import type { GameId, GameStats } from "../lib/storage";
 import type { GameComponentProps } from "./engineTypes";
 
 type Phase = "ready" | "playing" | "paused" | "gameover";
+
+// Per-game gameplay music. Everything not listed falls back to the generic
+// driving "action" loop, which is still the right fit for the arcade games;
+// the two sports/racing titles get their own moods so they don't sound like
+// the shooter. Keyed off gameId here rather than threaded through as a prop,
+// since GameShell already owns music start/stop and every caller already
+// passes gameId.
+const MUSIC_MOOD_BY_GAME: Partial<Record<GameId, MusicMood>> = {
+  soccer: "sports",
+  racing: "race",
+};
 
 interface GameErrorBoundaryProps {
   children: ReactNode;
@@ -94,9 +106,9 @@ export default function GameShell({
   }, [phase]);
 
   useEffect(() => {
-    engine.startMusic("action");
+    engine.startMusic(MUSIC_MOOD_BY_GAME[gameId] ?? "action");
     return () => engine.stopMusic();
-  }, []);
+  }, [gameId]);
 
   // Games only ever see the width/height they were created with in
   // createState(width, height) — engineTypes.ts doesn't define a contract for
@@ -133,8 +145,8 @@ export default function GameShell({
   // when they hit pause.
   useEffect(() => {
     if (phase === "paused") engine.stopMusic();
-    else if (phase === "playing") engine.startMusic("action");
-  }, [phase]);
+    else if (phase === "playing") engine.startMusic(MUSIC_MOOD_BY_GAME[gameId] ?? "action");
+  }, [phase, gameId]);
 
   const handleGameOver = (finalScore: number) => {
     setScore(finalScore);

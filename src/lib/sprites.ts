@@ -34,6 +34,30 @@ import ghostSpikeUrl from "../assets/game/sprites/ghost-spike.png";
 import dotGemUrl from "../assets/game/sprites/dot-gem.png";
 import starBadgeUrl from "../assets/game/sprites/star-badge.png";
 
+// Added 2026-08-31 for the Kickoff Clash / Turbo Dash artistic overhaul.
+// Soccer players are top-down torso-and-head sprites that face +X (right)
+// in the source art, so a canvas rotate() by the heading angle needs no
+// extra offset — see PLAYER_SPRITE_FACING below.
+import playerBlueAUrl from "../assets/game/sprites/player-blue-a.png";
+import playerBlueBUrl from "../assets/game/sprites/player-blue-b.png";
+import playerRedAUrl from "../assets/game/sprites/player-red-a.png";
+import playerRedBUrl from "../assets/game/sprites/player-red-b.png";
+import keeperGreenUrl from "../assets/game/sprites/keeper-green.png";
+// Turbo Dash rivals: deliberately the "_2" body shape from the Kenney
+// racing pack, so their silhouette differs from the "_1" shape used by the
+// player car and the traffic obstacles even at a glance.
+import carRivalRedUrl from "../assets/game/sprites/car-rival-red.png";
+import carRivalBlueUrl from "../assets/game/sprites/car-rival-blue.png";
+import carRivalYellowUrl from "../assets/game/sprites/car-rival-yellow.png";
+import roadsideBush1Url from "../assets/game/sprites/roadside-bush-1.png";
+import roadsideBush2Url from "../assets/game/sprites/roadside-bush-2.png";
+import roadsideConeUrl from "../assets/game/sprites/roadside-cone.png";
+import roadsideBarrelUrl from "../assets/game/sprites/roadside-barrel.png";
+import roadsideBarrierUrl from "../assets/game/sprites/roadside-barrier.png";
+import cloud1Url from "../assets/game/sprites/cloud-1.png";
+import cloud2Url from "../assets/game/sprites/cloud-2.png";
+import startLightsUrl from "../assets/game/sprites/start-lights.png";
+
 function loadImage(url: string): HTMLImageElement {
   const img = new Image();
   img.src = url;
@@ -67,7 +91,57 @@ export const SPRITES = {
   ghostSpike: loadImage(ghostSpikeUrl),
   dotGem: loadImage(dotGemUrl),
   starBadge: loadImage(starBadgeUrl),
+  playerBlueA: loadImage(playerBlueAUrl),
+  playerBlueB: loadImage(playerBlueBUrl),
+  playerRedA: loadImage(playerRedAUrl),
+  playerRedB: loadImage(playerRedBUrl),
+  keeperGreen: loadImage(keeperGreenUrl),
+  carRivalRed: loadImage(carRivalRedUrl),
+  carRivalBlue: loadImage(carRivalBlueUrl),
+  carRivalYellow: loadImage(carRivalYellowUrl),
+  roadsideBush1: loadImage(roadsideBush1Url),
+  roadsideBush2: loadImage(roadsideBush2Url),
+  roadsideCone: loadImage(roadsideConeUrl),
+  roadsideBarrel: loadImage(roadsideBarrelUrl),
+  roadsideBarrier: loadImage(roadsideBarrierUrl),
+  cloud1: loadImage(cloud1Url),
+  cloud2: loadImage(cloud2Url),
+  startLights: loadImage(startLightsUrl),
 };
+
+// The soccer character art is drawn facing right (+X, i.e. 0 radians in
+// canvas space). Renderers rotate by `Math.atan2(dy, dx) + PLAYER_SPRITE_FACING`
+// so if we ever swap in art with a different rest orientation, only this
+// constant changes.
+export const PLAYER_SPRITE_FACING = 0;
+
+// Kickoff Clash's four outfield players. Both teams get two visibly
+// different faces/hair so "you vs. your teammate" and "defender 1 vs.
+// defender 2" stay distinguishable without relying on the kit color alone.
+export const SOCCER_PLAYER_SPRITES = {
+  player: SPRITES.playerBlueA,
+  teammate: SPRITES.playerBlueB,
+  opponentA: SPRITES.playerRedA,
+  opponentB: SPRITES.playerRedB,
+  keeper: SPRITES.keeperGreen,
+};
+
+// Turbo Dash's three named rivals, in the fixed order the engine spawns
+// them: Red Comet, Blue Blaze, Gold Rush.
+export const RIVAL_CAR_SPRITES = [SPRITES.carRivalRed, SPRITES.carRivalBlue, SPRITES.carRivalYellow];
+
+// Scenery scattered along Turbo Dash's shoulders. Cycled by index so the
+// roadside doesn't repeat in an obvious rhythm.
+export const ROADSIDE_SPRITES = [
+  SPRITES.roadsideBush1,
+  SPRITES.roadsideCone,
+  SPRITES.roadsideBush2,
+  SPRITES.roadsideBarrel,
+  SPRITES.roadsideBush1,
+  SPRITES.roadsideBarrier,
+];
+
+export const CLOUD_SPRITES = [SPRITES.cloud1, SPRITES.cloud2];
 
 // Cycles through the 4 distinct Munch Maze ghost sprites by index so each
 // ghost keeps a stable, recognizable look across frames (classic Pac-Man

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArcadeProvider, useArcade } from "./context/ArcadeContext";
 import { attachGlobalInput } from "./lib/input";
+import { setReducedMotion } from "./lib/motion";
 import { loadDisplayFont } from "./lib/font";
 import Starfield from "./components/Starfield";
 import ProfilePicker from "./components/ProfilePicker";
@@ -102,8 +103,15 @@ function Screens() {
   // <html>, matched in index.css alongside the OS-level
   // prefers-reduced-motion media query — so the in-app setting works
   // whether or not the device's own OS preference is set.
+  //
+  // The same effect pushes it into the `motion` singleton in lib/motion.ts,
+  // which is what the canvas games read each frame (they can't see React
+  // state from inside a rAF loop). Doing both in one place is deliberate:
+  // if they were set separately the CSS and canvas accommodations could
+  // drift out of sync.
   useEffect(() => {
     document.documentElement.classList.toggle("reduce-motion", settings.reducedMotion);
+    setReducedMotion(settings.reducedMotion);
   }, [settings.reducedMotion]);
 
   useEffect(() => {

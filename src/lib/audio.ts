@@ -39,6 +39,27 @@ import voiceReadyUrl from "../assets/game/sfx/voice-ready.ogg";
 import voiceGameoverUrl from "../assets/game/sfx/voice-gameover.ogg";
 import voiceHighscoreUrl from "../assets/game/sfx/voice-highscore.ogg";
 
+// Added 2026-08-31 for the Kickoff Clash / Turbo Dash artistic overhaul.
+// Both games previously reused generic UI blips for their signature moments
+// (a ball strike played the menu tile-swap sound), which read as placeholder.
+import kickUrl from "../assets/game/sfx/kick.ogg";
+import netUrl from "../assets/game/sfx/net.ogg";
+import crashUrl from "../assets/game/sfx/crash.ogg";
+import boostUrl from "../assets/game/sfx/boost.ogg";
+import countdownUrl from "../assets/game/sfx/countdown.ogg";
+import goalHornUrl from "../assets/game/sfx/goal-horn.ogg";
+import fanfareUrl from "../assets/game/sfx/fanfare.ogg";
+import voice3Url from "../assets/game/sfx/voice-3.ogg";
+import voice2Url from "../assets/game/sfx/voice-2.ogg";
+import voice1Url from "../assets/game/sfx/voice-1.ogg";
+import voiceGoUrl from "../assets/game/sfx/voice-go.ogg";
+import voiceSetUrl from "../assets/game/sfx/voice-set.ogg";
+import voiceFinalRoundUrl from "../assets/game/sfx/voice-final-round.ogg";
+import voiceHurryUpUrl from "../assets/game/sfx/voice-hurry-up.ogg";
+import voiceYouWinUrl from "../assets/game/sfx/voice-you-win.ogg";
+import voiceTieUrl from "../assets/game/sfx/voice-tie.ogg";
+import voiceTimeOverUrl from "../assets/game/sfx/voice-time-over.ogg";
+
 export type SfxName =
   | "move"
   | "select"
@@ -52,9 +73,33 @@ export type SfxName =
   | "jump"
   | "shoot"
   | "skid"
-  | "highscore";
-export type MusicMood = "menu" | "action";
-export type AnnouncerName = "ready" | "gameover" | "highscore";
+  | "highscore"
+  // Kickoff Clash
+  | "kick"
+  | "net"
+  | "whistle"
+  | "goalHorn"
+  // Turbo Dash
+  | "crash"
+  | "boost"
+  // shared
+  | "countdown"
+  | "fanfare";
+export type MusicMood = "menu" | "action" | "sports" | "race";
+export type AnnouncerName =
+  | "ready"
+  | "gameover"
+  | "highscore"
+  | "three"
+  | "two"
+  | "one"
+  | "go"
+  | "set"
+  | "finalRound"
+  | "hurryUp"
+  | "youWin"
+  | "tie"
+  | "timeOver";
 
 type SampleName = SfxName | "engineLoop";
 type BlipType = OscillatorType;
@@ -88,7 +133,18 @@ const SAMPLE_URLS: Partial<Record<SampleName, string>> = {
   shoot: blasterUrl,
   skid: skidUrl,
   highscore: highscoreUrl,
+  kick: kickUrl,
+  net: netUrl,
+  crash: crashUrl,
+  boost: boostUrl,
+  countdown: countdownUrl,
+  goalHorn: goalHornUrl,
+  fanfare: fanfareUrl,
   engineLoop: engineLoopUrl,
+  // Deliberately absent: "whistle". No Kenney pack ships a referee whistle,
+  // and it's the one sound in Kickoff Clash a kid will recognise instantly,
+  // so it's fully synthesized below (see `whistleSynth`) rather than
+  // approximated with a wrong-sounding sample.
 };
 const SAMPLE_GAIN: Partial<Record<SampleName, number>> = {
   move: 0.35,
@@ -103,6 +159,15 @@ const SAMPLE_GAIN: Partial<Record<SampleName, number>> = {
   shoot: 0.5,
   skid: 0.5,
   highscore: 0.7,
+  // The impact samples are normalized hot (peak ~1.27), so they sit lower
+  // than the UI blips to keep a rally of kicks from clipping the sfx bus.
+  kick: 0.45,
+  net: 0.4,
+  crash: 0.55,
+  boost: 0.5,
+  countdown: 0.6,
+  goalHorn: 0.7,
+  fanfare: 0.7,
 };
 
 // Voice-over clips (see the file-level comment above) — a separate map from
@@ -112,6 +177,16 @@ const ANNOUNCER_URLS: Record<AnnouncerName, string> = {
   ready: voiceReadyUrl,
   gameover: voiceGameoverUrl,
   highscore: voiceHighscoreUrl,
+  three: voice3Url,
+  two: voice2Url,
+  one: voice1Url,
+  go: voiceGoUrl,
+  set: voiceSetUrl,
+  finalRound: voiceFinalRoundUrl,
+  hurryUp: voiceHurryUpUrl,
+  youWin: voiceYouWinUrl,
+  tie: voiceTieUrl,
+  timeOver: voiceTimeOverUrl,
 };
 
 function noteFreq(name: (typeof NOTE_NAMES)[number], octave: number): number {
@@ -129,7 +204,15 @@ function n(spec: string): number {
 
 type Pattern = { bpm: number; bass: (string | null)[]; lead: (string | null)[] };
 
+// Idle murmur vs. full-throated roar for the synthesized crowd layer below.
+// Both are deliberately modest: the crowd rides under the music on the same
+// bus, so a "peak" that felt right soloed would bury the melody in practice.
+const CROWD_BASE = 0.05;
+const CROWD_PEAK = 0.28;
+
 // Thrilling, driving A-minor pattern for gameplay; brighter C-major-ish for menu.
+// "sports" and "race" were added so Kickoff Clash and Turbo Dash stop sharing
+// the generic "action" loop with the shooter — each now has its own identity.
 const PATTERNS: Record<MusicMood, Pattern> = {
   menu: {
     bpm: 128,
@@ -145,6 +228,30 @@ const PATTERNS: Record<MusicMood, Pattern> = {
     lead: [
       "A4", "C5", "E5", "C5", "A4", "C5", "E5", "G5",
       "F4", "A4", "C5", "A4", "G4", "B4", "D5", "E5",
+    ],
+  },
+  // Stadium terrace chant: a slow, wide, major-key anthem built on long
+  // held bass roots and a lead that repeats each note in pairs, which is
+  // what makes a crowd chant read as a chant rather than a melody.
+  // Deliberately the slowest of the four so it sits under the crowd
+  // ambience layer instead of fighting it.
+  sports: {
+    bpm: 108,
+    bass: ["G2", null, null, null, "D3", null, null, null, "E3", null, null, null, "C3", null, null, null],
+    lead: [
+      "G4", "G4", "B4", "B4", "D5", "D5", "B4", "B4",
+      "E5", "E5", "D5", "D5", "B4", "B4", "G4", null,
+    ],
+  },
+  // Motorsport chase: fastest of the four, with a relentless straight-eighths
+  // bass (no rests — it should feel like it never lets you breathe) and a
+  // chromatic D-minor lead that climbs, drops, and climbs again.
+  race: {
+    bpm: 172,
+    bass: ["D2", "D2", "D2", "D2", "D2", "D2", "F2", "G2", "A2", "A2", "A2", "A2", "G2", "G2", "F2", "E2"],
+    lead: [
+      "D5", "F5", "A5", "F5", "D5", "F5", "A5", "C6",
+      "As5", "A5", "G5", "F5", "E5", "G5", "F5", "D5",
     ],
   },
 };
@@ -165,6 +272,8 @@ class ChiptuneEngine {
   private samples: Partial<Record<SampleName, AudioBuffer>> = {};
   private announcerSamples: Partial<Record<AnnouncerName, AudioBuffer>> = {};
   private engineSource: AudioBufferSourceNode | null = null;
+  private crowdSource: AudioBufferSourceNode | null = null;
+  private crowdGain: GainNode | null = null;
 
   // music scheduler state
   private mood: MusicMood | null = null;
@@ -347,9 +456,78 @@ class ChiptuneEngine {
       case "skid":
         this.blip({ freq: 220, dur: 0.1, type: "sawtooth", startFreq: 220, sweepTo: 90, gain: 0.2 });
         break;
+      case "whistle":
+        // Always synthesized — see the note in SAMPLE_URLS.
+        this.whistleSynth();
+        break;
+      case "kick":
+        // A boot through a ball is a low, fast-decaying thump with a click on
+        // the front — the two layers are the click and the body.
+        this.blip({ freq: 900, dur: 0.03, type: "square", gain: 0.2 });
+        this.blip({ freq: 150, dur: 0.18, type: "sine", startFreq: 190, sweepTo: 55, gain: 0.5 });
+        break;
+      case "net":
+        this.blip({ freq: 320, dur: 0.07, type: "triangle", startFreq: 380, sweepTo: 240, gain: 0.18 });
+        break;
+      case "goalHorn":
+        // Rising major triad held long enough to feel like an air horn.
+        [392, 494, 587].forEach((f, i) => this.blip({ freq: f, dur: 0.45, type: "sawtooth", gain: 0.3, delay: i * 0.06 }));
+        break;
+      case "crash":
+        this.blip({ freq: 260, dur: 0.3, type: "sawtooth", startFreq: 420, sweepTo: 60, gain: 0.45 });
+        this.blip({ freq: 1400, dur: 0.12, type: "square", startFreq: 1800, sweepTo: 500, gain: 0.2 });
+        break;
+      case "boost":
+        this.blip({ freq: 700, dur: 0.4, type: "sawtooth", startFreq: 180, sweepTo: 1500, gain: 0.35 });
+        break;
+      case "countdown":
+        this.blip({ freq: 440, dur: 0.14, type: "sine", gain: 0.4 });
+        break;
+      case "fanfare":
+        [523, 659, 784, 1046].forEach((f, i) => this.blip({ freq: f, dur: 0.22, type: "square", gain: 0.35, delay: i * 0.1 }));
+        break;
       default:
         break;
     }
+  }
+
+  // A referee's whistle: a pea whistle is two closely-detuned high tones
+  // (which beat against each other to give that piercing "shriek") plus a
+  // fast warble from the pea rattling around. Modelled here as two square
+  // oscillators ~80 Hz apart with a shared vibrato LFO.
+  private whistleSynth(dur = 0.35): void {
+    if (!this.ctx || !this.sfxGain) return;
+    const t0 = this.ctx.currentTime;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02);
+    g.gain.setValueAtTime(0.22, t0 + dur - 0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    g.connect(this.sfxGain);
+
+    // The warble. ~28 Hz is fast enough to sound like a rattling pea rather
+    // than a wobbly siren.
+    const lfo = this.ctx.createOscillator();
+    lfo.type = "sine";
+    lfo.frequency.value = 28;
+    const lfoDepth = this.ctx.createGain();
+    lfoDepth.gain.value = 55;
+    lfo.connect(lfoDepth);
+
+    const oscs: OscillatorNode[] = [];
+    for (const freq of [3180, 3260]) {
+      const osc = this.ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(freq, t0);
+      lfoDepth.connect(osc.frequency);
+      osc.connect(g);
+      oscs.push(osc);
+    }
+
+    lfo.start(t0);
+    oscs.forEach((o) => o.start(t0));
+    lfo.stop(t0 + dur + 0.02);
+    oscs.forEach((o) => o.stop(t0 + dur + 0.02));
   }
 
   // ---- Looping engine hum (Turbo Dash only) -----------------------------
@@ -380,6 +558,97 @@ class ChiptuneEngine {
       }
       this.engineSource = null;
     }
+  }
+
+  // ---- Crowd ambience (Kickoff Clash) -----------------------------------
+  // A synthesized stadium crowd: looped noise split through two bandpass
+  // filters (a low "rumble" band and a higher "hiss/voices" band) so it reads
+  // as a packed stand rather than as tape hiss. There's no crowd sample in
+  // any of the Kenney packs, and a real crowd loop would dwarf every other
+  // asset in the bundle, so this is both the better-sounding and the smaller
+  // option.
+  //
+  // It hangs off musicGain, not sfxGain, on purpose: this is atmosphere, not
+  // feedback. Muting music should silence the stadium; muting sfx should
+  // still let you hear the crowd behind the whistle.
+  startCrowd(): void {
+    if (!this.ctx || !this.musicGain || this.crowdSource) return;
+    const ctx = this.ctx;
+    // 4 seconds of noise is long enough that the loop point isn't audible.
+    const len = Math.floor(ctx.sampleRate * 4);
+    const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    // Cheap pink-ish noise: a one-pole lowpass over white noise. Pure white
+    // noise sounds like static; rolling off the top end is what makes it
+    // sit back and read as "distant crowd".
+    let last = 0;
+    for (let i = 0; i < len; i += 1) {
+      const white = Math.random() * 2 - 1;
+      last = last * 0.96 + white * 0.04;
+      data[i] = last * 6;
+    }
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+
+    const low = ctx.createBiquadFilter();
+    low.type = "bandpass";
+    low.frequency.value = 320;
+    low.Q.value = 0.7;
+
+    const high = ctx.createBiquadFilter();
+    high.type = "bandpass";
+    high.frequency.value = 1500;
+    high.Q.value = 0.5;
+
+    const highTrim = ctx.createGain();
+    highTrim.gain.value = 0.5;
+
+    const crowd = ctx.createGain();
+    crowd.gain.value = CROWD_BASE;
+
+    src.connect(low).connect(crowd);
+    src.connect(high).connect(highTrim).connect(crowd);
+    crowd.connect(this.musicGain);
+    src.start();
+
+    this.crowdSource = src;
+    this.crowdGain = crowd;
+  }
+
+  // Swells the crowd toward `level` (0..1) and then settles back to the
+  // idle murmur. Call on a goal, a near miss, or a penalty run-up.
+  // `holdMs` is how long to stay up before decaying.
+  cheer(level = 1, holdMs = 1200): void {
+    if (!this.ctx || !this.crowdGain) return;
+    const now = this.ctx.currentTime;
+    const peak = CROWD_BASE + (CROWD_PEAK - CROWD_BASE) * Math.min(1, Math.max(0, level));
+    const g = this.crowdGain.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(peak, now + 0.12);
+    g.setTargetAtTime(CROWD_BASE, now + holdMs / 1000, 0.9);
+  }
+
+  // Sets the sustained crowd level directly (0..1) without a swell/decay —
+  // for tension that builds and holds, e.g. a penalty shootout run-up.
+  setCrowdLevel(level: number): void {
+    if (!this.ctx || !this.crowdGain) return;
+    const target = CROWD_BASE + (CROWD_PEAK - CROWD_BASE) * Math.min(1, Math.max(0, level));
+    this.crowdGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.4);
+  }
+
+  stopCrowd(): void {
+    if (this.crowdSource) {
+      try {
+        this.crowdSource.stop();
+      } catch {
+        // already stopped
+      }
+      this.crowdSource = null;
+    }
+    this.crowdGain = null;
   }
 
   // ---- Music -----------------------------------------------------------
