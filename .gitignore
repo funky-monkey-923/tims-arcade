@@ -10,7 +10,18 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist2
+dist3
+dist4
+dist5
+dist-verify*
 *.local
+
+# Raw source asset packs (Kenney Godot Starter Kits) — kept locally for
+# reference/provenance only. They contain nested .git repos and ~80MB of
+# 3D models that aren't used by this 2D canvas app; only the small curated
+# files copied into public/game-assets/ are actually shipped. See CREDITS.md.
+asset-packs/
 
 # Editor directories and files
 .vscode/*

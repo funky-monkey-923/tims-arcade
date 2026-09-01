@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* The "Lilita One" display font (SIL OFL 1.1 — see
+   src/assets/game/fonts/LilitaOne-LICENSE.txt and CREDITS.md) is
+   registered at runtime by src/lib/font.ts via the FontFace API, not a
+   static @font-face url() here — that keeps its resolved URL correct
+   under any deploy base path (e.g. a GitHub Pages project subpath),
+   which a hardcoded CSS path wouldn't get. */
+
 @theme {
   /* Tim's Arcade palette — neon arcade-cabinet-at-night, not the generic AI cream/terracotta or dark+single-accent look */
   --color-night: #1a1140;      /* deep indigo background, the "arcade at night" base */
@@ -14,7 +21,7 @@
   --color-cloud: #f5f5ff;      /* off-white text on dark */
   --color-ink: #170f38;        /* text on light chips */
 
-  --font-display: "Baloo 2", "Nunito", system-ui, sans-serif;
+  --font-display: "Lilita One", "Nunito", system-ui, sans-serif;
   --font-body: "Nunito", system-ui, sans-serif;
   --font-pixel: "Press Start 2P", monospace;
 

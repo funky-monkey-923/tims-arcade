@@ -1,10 +1,4 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
-
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+// Superseded by main.tsx (index.html now loads /src/main.tsx directly).
+// See lib/audio.js for why this shim exists; kept only so a stray old
+// reference wouldn't 404 — nothing imports this file anymore.
+export {};
