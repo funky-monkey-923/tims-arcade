@@ -75,11 +75,16 @@ export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: numb
   ctx.fillStyle = "#f5f5ff";
   ctx.textAlign = "left";
   ctx.fillText(`${Math.round(state.speed * 20)} mph`, 10, 20);
-  if (ts - state.lastNitroAt < NITRO_COOLDOWN && !nitroActive) {
-    ctx.textAlign = "right";
+  // Nitro state is otherwise shown via color (gold tint) + smoke — add a
+  // text label here too, matching the "charging…"/"ready!" labels already
+  // shown the rest of the time, so the state is legible without relying on
+  // color at all.
+  ctx.textAlign = "right";
+  if (nitroActive) {
+    ctx.fillText("NITRO!", width - 10, 20);
+  } else if (ts - state.lastNitroAt < NITRO_COOLDOWN) {
     ctx.fillText("nitro charging…", width - 10, 20);
-  } else if (!nitroActive) {
-    ctx.textAlign = "right";
+  } else {
     ctx.fillText("nitro ready!", width - 10, 20);
   }
 }

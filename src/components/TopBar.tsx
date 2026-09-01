@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useArcade } from "../context/ArcadeContext";
+import SettingsPanel from "./SettingsPanel";
 
 interface TopBarProps {
   onBack?: () => void;
@@ -9,7 +10,9 @@ interface TopBarProps {
 }
 
 export default function TopBar({ onBack, backLabel = "Back", showProfile = true, right }: TopBarProps) {
-  const { activeProfile, muted, toggleMuted } = useArcade();
+  const { activeProfile, settings, toggleMuted } = useArcade();
+  const [showSettings, setShowSettings] = useState(false);
+  const muted = settings.musicMuted && settings.sfxMuted;
   return (
     <header className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
       <div className="flex items-center gap-3">
@@ -41,8 +44,18 @@ export default function TopBar({ onBack, backLabel = "Back", showProfile = true,
         >
           {muted ? "🔇" : "🔊"}
         </button>
+        <button
+          type="button"
+          onClick={() => setShowSettings(true)}
+          aria-label="Settings"
+          className="w-10 h-10 rounded-full bg-violet/80 border-2 border-violet-2 flex items-center justify-center text-lg hover:bg-violet-2 transition-colors"
+        >
+          ⚙️
+        </button>
         {right}
       </div>
+
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </header>
   );
 }

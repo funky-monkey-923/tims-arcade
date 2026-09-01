@@ -14,6 +14,7 @@ export default function TurboDash({ width, height, paused, onScoreUpdate, onGame
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stateRef = useRef<RacingState | null>(null);
   const rafRef = useRef<number>(0);
+  const lastTsRef = useRef<number>(0);
 
   useEffect(() => {
     stateRef.current = racingEngine.createState(width, height);
@@ -36,11 +37,14 @@ export default function TurboDash({ width, height, paused, onScoreUpdate, onGame
       const state = stateRef.current;
       if (!state || state.dead) return;
 
+      const dt = lastTsRef.current ? ts - lastTsRef.current : 16.7;
+      lastTsRef.current = ts;
+
       if (!paused) {
         const events = racingEngine.step(
           state,
-          { up: controls.up, down: controls.down, left: controls.left, right: controls.right, confirm: controls.confirm, cancel: controls.cancel, pointer: controls.pointer },
-          16.7,
+          { moveUp: controls.moveUp, moveDown: controls.moveDown, moveLeft: controls.moveLeft, moveRight: controls.moveRight, primaryAction: controls.primaryAction, secondaryAction: controls.secondaryAction, pointer: controls.pointer },
+          dt,
           ts
         );
         if (events.laneChange) audioEngine.playSfx("skid");

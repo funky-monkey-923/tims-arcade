@@ -16,13 +16,20 @@
 //     canvas-relative coordinates, and wires engine.step() + render.draw()
 //     together inside the rAF loop.
 
+// The per-frame input snapshot every game's step() receives. Deliberately
+// only the gameplay-facing action names (MOVE_*/PRIMARY_ACTION/
+// SECONDARY_ACTION) — menu-only concepts like CONFIRM/BACK/PAUSE live in
+// src/lib/input.ts's Controls but never reach an engine, since "confirm this
+// menu item" isn't a gameplay concept. See src/lib/input.ts's file header
+// for why PRIMARY_ACTION/SECONDARY_ACTION are named separately from
+// CONFIRM/BACK even though the same physical keys drive both pairs today.
 export interface EngineInput {
-  up: boolean;
-  down: boolean;
-  left: boolean;
-  right: boolean;
-  confirm: boolean;
-  cancel: boolean;
+  moveUp: boolean;
+  moveDown: boolean;
+  moveLeft: boolean;
+  moveRight: boolean;
+  primaryAction: boolean;
+  secondaryAction: boolean;
   pointer: { x: number; y: number; active: boolean };
 }
 

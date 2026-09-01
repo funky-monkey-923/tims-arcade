@@ -44,4 +44,28 @@ export function draw(ctx: CanvasRenderingContext2D, state: SnakeState, ts: numbe
     ctx.roundRect(seg.x * cell + pad, seg.y * cell + pad, cell - pad * 2, cell - pad * 2, 6);
     ctx.fill();
   });
+
+  // The head is only a slightly lighter green than the body today — add a
+  // pair of eyes so which end is "the front" is legible by shape too, not
+  // just a subtle shade difference that's easy to miss at a glance (or for
+  // a color-blind player to not register as different at all).
+  const head = state.snake[0];
+  if (head) {
+    const hx = (head.x + 0.5) * cell;
+    const hy = (head.y + 0.5) * cell;
+    const dx = state.dir.x || 0;
+    const dy = state.dir.y || -1;
+    const eyeOffset = cell * 0.16;
+    const eyeR = cell * 0.09;
+    // perpendicular offset so the two eyes sit side-by-side across the
+    // direction of travel, not stacked front-to-back
+    const px = -dy;
+    const py = dx;
+    ctx.fillStyle = "#150c33";
+    [-1, 1].forEach((side) => {
+      ctx.beginPath();
+      ctx.arc(hx + dx * eyeOffset + px * eyeOffset * side, hy + dy * eyeOffset + py * eyeOffset * side, eyeR, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
 }

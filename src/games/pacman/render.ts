@@ -89,6 +89,20 @@ export function draw(ctx: CanvasRenderingContext2D, state: MazeState, ts: number
     } else {
       drawGhost(ctx, gx, gy, size, g.color, scared);
     }
+    // "Scared" (edible) is otherwise conveyed by color alone (a blue tint) —
+    // add a shape-based cue too, since color-blind players (or anyone on a
+    // washed-out screen) shouldn't have to guess whether a ghost is safe to
+    // eat. A dashed ring reads clearly regardless of hue perception.
+    if (scared) {
+      ctx.save();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([cell * 0.08, cell * 0.06]);
+      ctx.beginPath();
+      ctx.arc(gx, gy, size * 0.62, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   });
 
   const p = state.player;

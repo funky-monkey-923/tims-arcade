@@ -75,10 +75,10 @@ export function step(state: SnakeState, input: EngineInput, _dtMs: number, tsMs:
   if (state.dead) return {};
 
   // read held keyboard/gamepad/touch direction each frame
-  if (input.up) setDir(state, { x: 0, y: -1 });
-  else if (input.down) setDir(state, { x: 0, y: 1 });
-  else if (input.left) setDir(state, { x: -1, y: 0 });
-  else if (input.right) setDir(state, { x: 1, y: 0 });
+  if (input.moveUp) setDir(state, { x: 0, y: -1 });
+  else if (input.moveDown) setDir(state, { x: 0, y: 1 });
+  else if (input.moveLeft) setDir(state, { x: -1, y: 0 });
+  else if (input.moveRight) setDir(state, { x: 1, y: 0 });
 
   if (tsMs - state.lastTick < TICK_MS) return {};
   state.lastTick = tsMs;
@@ -87,14 +87,19 @@ export function step(state: SnakeState, input: EngineInput, _dtMs: number, tsMs:
   const head: Vec = { x: state.snake[0].x + state.dir.x, y: state.snake[0].y + state.dir.y };
 
   const hitWall = head.x < 0 || head.y < 0 || head.x >= GRID || head.y >= GRID;
-  const hitSelf = state.snake.some((s) => s.x === head.x && s.y === head.y);
+  const willGrow = head.x === state.food.x && head.y === state.food.y;
+  // The tail segment vacates this same tick (unless the snake is about to
+  // grow, in which case it stays put) — so moving into that cell is legal
+  // standard snake behavior, not a self-collision.
+  const bodyToCheck = willGrow ? state.snake : state.snake.slice(0, -1);
+  const hitSelf = bodyToCheck.some((s) => s.x === head.x && s.y === head.y);
   if (hitWall || hitSelf) {
     state.dead = true;
     return { gameOver: state.score };
   }
 
   state.snake.unshift(head);
-  if (head.x === state.food.x && head.y === state.food.y) {
+  if (willGrow) {
     state.score += 10;
     state.food = randCell(state.snake);
     return { score: state.score };

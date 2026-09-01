@@ -11,6 +11,10 @@ const PLAYER_SPEED = 3.4;
 const CPU_SPEED = 2.6; // slightly slower than the player: easy mode
 const BALL_FRICTION = 0.985;
 const KICK_COOLDOWN = 380;
+// A hard shot (power 10, see `shoot()` calls below) should be close to the
+// fastest the ball ever goes — this caps runaway speed from sustained
+// dribble-push contact (e.g. pinning the ball against a wall every frame).
+const MAX_BALL_SPEED = 11;
 
 export interface Entity {
   x: number;
@@ -88,7 +92,16 @@ function shoot(ball: Ball, width: number, height: number, goalHalf: number, towa
   ball.vy = (dy / len) * power;
 }
 
-export function step(state: SoccerState, input: EngineInput, _dtMs: number, tsMs: number): SoccerEvents {
+function capBallSpeed(ball: Ball): void {
+  const speed = Math.hypot(ball.vx, ball.vy);
+  if (speed > MAX_BALL_SPEED) {
+    const scale = MAX_BALL_SPEED / speed;
+    ball.vx *= scale;
+    ball.vy *= scale;
+  }
+}
+
+export function step(state: SoccerState, input: EngineInput, dtMs: number, tsMs: number): SoccerEvents {
   if (state.over) return {};
 
   const { width, height } = state;
@@ -99,10 +112,10 @@ export function step(state: SoccerState, input: EngineInput, _dtMs: number, tsMs
   // player movement
   let dx = 0;
   let dy = 0;
-  if (input.left) dx -= 1;
-  if (input.right) dx += 1;
-  if (input.up) dy -= 1;
-  if (input.down) dy += 1;
+  if (input.moveLeft) dx -= 1;
+  if (input.moveRight) dx += 1;
+  if (input.moveUp) dy -= 1;
+  if (input.moveDown) dy += 1;
   if (dx || dy) {
     const len = Math.hypot(dx, dy) || 1;
     player.x += (dx / len) * PLAYER_SPEED;
@@ -113,7 +126,7 @@ export function step(state: SoccerState, input: EngineInput, _dtMs: number, tsMs
 
   // shoot on confirm, when close enough to the ball
   const distToBall = Math.hypot(ball.x - player.x, ball.y - player.y);
-  if (input.confirm && tsMs - state.lastKick > KICK_COOLDOWN && distToBall < player.r + ball.r + 10) {
+  if (input.primaryAction && tsMs - state.lastKick > KICK_COOLDOWN && distToBall < player.r + ball.r + 10) {
     state.lastKick = tsMs;
     shoot(ball, width, height, goalHalf, true, 10);
     events.shotFired = true;
@@ -124,6 +137,7 @@ export function step(state: SoccerState, input: EngineInput, _dtMs: number, tsMs
     ball.vx += nx * 1.6;
     ball.vy += ny * 1.6;
   }
+  capBallSpeed(ball);
 
   // cpu defender AI: chase the ball, clear it toward the player's goal when close
   const cdx = ball.x - cpu.x;
@@ -136,6 +150,7 @@ export function step(state: SoccerState, input: EngineInput, _dtMs: number, tsMs
   cpu.x = Math.max(cpu.r, Math.min(width - cpu.r, cpu.x));
   cpu.y = Math.max(cpu.r, Math.min(height - cpu.r, cpu.y));
   if (cdist < cpu.r + ball.r + 6 && tsMs - state.lastKick > 500 && Math.random() < 0.05) {
+    state.lastKick = tsMs;
     shoot(ball, width, height, goalHalf, false, 7.5);
     events.shotFired = true;
   }
@@ -145,6 +160,7 @@ export function step(state: SoccerState, input: EngineInput, _dtMs: number, tsMs
   ball.y += ball.vy;
   ball.vx *= BALL_FRICTION;
   ball.vy *= BALL_FRICTION;
+  capBallSpeed(ball);
 
   if (ball.y < ball.r) {
     ball.y = ball.r;
@@ -176,7 +192,7 @@ export function step(state: SoccerState, input: EngineInput, _dtMs: number, tsMs
     }
   }
 
-  state.timeLeft -= 16.7;
+  state.timeLeft -= dtMs;
   if (state.timeLeft <= 0) {
     state.over = true;
     const won = state.playerGoals > state.cpuGoals;

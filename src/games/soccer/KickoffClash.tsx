@@ -14,6 +14,7 @@ export default function KickoffClash({ width, height, paused, onScoreUpdate, onG
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stateRef = useRef<SoccerState | null>(null);
   const rafRef = useRef<number>(0);
+  const lastTsRef = useRef<number>(0);
 
   useEffect(() => {
     stateRef.current = soccerEngine.createState(width, height);
@@ -29,11 +30,14 @@ export default function KickoffClash({ width, height, paused, onScoreUpdate, onG
       const state = stateRef.current;
       if (!state) return;
 
+      const dt = lastTsRef.current ? ts - lastTsRef.current : 16.7;
+      lastTsRef.current = ts;
+
       if (!paused) {
         const events = soccerEngine.step(
           state,
-          { up: controls.up, down: controls.down, left: controls.left, right: controls.right, confirm: controls.confirm, cancel: controls.cancel, pointer: controls.pointer },
-          16.7,
+          { moveUp: controls.moveUp, moveDown: controls.moveDown, moveLeft: controls.moveLeft, moveRight: controls.moveRight, primaryAction: controls.primaryAction, secondaryAction: controls.secondaryAction, pointer: controls.pointer },
+          dt,
           ts
         );
         if (events.shotFired) {

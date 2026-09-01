@@ -95,24 +95,24 @@ export function step(state: RacingState, input: EngineInput, dtMs: number, tsMs:
   const carH = height * 0.11;
 
   // discrete lane change on the rising edge of left/right
-  if (input.left && !state.prevLeft) {
+  if (input.moveLeft && !state.prevLeft) {
     state.lane = Math.max(0, state.lane - 1);
     events.laneChange = true;
   }
-  if (input.right && !state.prevRight) {
+  if (input.moveRight && !state.prevRight) {
     state.lane = Math.min(LANES - 1, state.lane + 1);
     events.laneChange = true;
   }
-  state.prevLeft = input.left;
-  state.prevRight = input.right;
+  state.prevLeft = input.moveLeft;
+  state.prevRight = input.moveRight;
   state.x += (laneX(width, state.lane) - state.x) * 0.25;
 
-  const nitroActive = tsMs < state.nitroUntil;
-  if (input.confirm && tsMs - state.lastNitroAt > NITRO_COOLDOWN) {
+  if (input.primaryAction && tsMs - state.lastNitroAt > NITRO_COOLDOWN) {
     state.lastNitroAt = tsMs;
     state.nitroUntil = tsMs + NITRO_MS;
     events.nitroActivated = true;
   }
+  const nitroActive = tsMs < state.nitroUntil;
 
   state.speed = Math.min(MAX_SPEED, state.speed + ACCEL * dtMs) * (nitroActive ? 1.6 : 1);
   state.distance += state.speed;

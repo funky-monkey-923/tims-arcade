@@ -27,15 +27,15 @@ export function useGridNav({ count, columns, onConfirm, onCancel, enabled = true
       const c = typeof columns === "function" ? columns() : columns;
       setFocused((f) => {
         let next = f;
-        if (action === "right") next = Math.min(countRef.current - 1, f + 1);
-        else if (action === "left") next = Math.max(0, f - 1);
-        else if (action === "down") next = Math.min(countRef.current - 1, f + c);
-        else if (action === "up") next = Math.max(0, f - c);
+        if (action === "MOVE_RIGHT") next = Math.min(countRef.current - 1, f + 1);
+        else if (action === "MOVE_LEFT") next = Math.max(0, f - 1);
+        else if (action === "MOVE_DOWN") next = Math.min(countRef.current - 1, f + c);
+        else if (action === "MOVE_UP") next = Math.max(0, f - c);
         if (next !== f) engine.playSfx("move");
         return next;
       });
-      if (action === "confirm") onConfirm?.(focused);
-      if (action === "cancel") onCancel?.();
+      if (action === "CONFIRM") onConfirm?.(focused);
+      if (action === "BACK") onCancel?.();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, columns, onConfirm, onCancel, focused]);

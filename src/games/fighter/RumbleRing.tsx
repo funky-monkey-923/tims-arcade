@@ -36,7 +36,7 @@ export default function RumbleRing({ width, height, paused, onScoreUpdate, onGam
       if (!paused) {
         const events = fighterEngine.step(
           state,
-          { up: controls.up, down: controls.down, left: controls.left, right: controls.right, confirm: controls.confirm, cancel: controls.cancel, pointer: controls.pointer },
+          { moveUp: controls.moveUp, moveDown: controls.moveDown, moveLeft: controls.moveLeft, moveRight: controls.moveRight, primaryAction: controls.primaryAction, secondaryAction: controls.secondaryAction, pointer: controls.pointer },
           dt,
           ts
         );

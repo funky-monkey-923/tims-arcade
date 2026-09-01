@@ -151,11 +151,17 @@ const PATTERNS: Record<MusicMood, Pattern> = {
 
 class ChiptuneEngine {
   private ctx: AudioContext | null = null;
-  private masterGain: GainNode | null = null;
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
-  private muted = false;
-  private volume = 0.7;
+  // Internal mix balance (music sits quieter than sfx by design) — the
+  // public volume setters below scale on top of this, so a 100% music
+  // slider sounds the same as this app always has, not deafening.
+  private readonly musicMix = 0.35;
+  private readonly sfxMix = 0.9;
+  private musicVolume = 1;
+  private sfxVolume = 1;
+  private musicMuted = false;
+  private sfxMuted = false;
   private samples: Partial<Record<SampleName, AudioBuffer>> = {};
   private announcerSamples: Partial<Record<AnnouncerName, AudioBuffer>> = {};
   private engineSource: AudioBufferSourceNode | null = null;
@@ -175,17 +181,14 @@ class ChiptuneEngine {
     }
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new Ctx();
-    this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = this.muted ? 0 : this.volume;
-    this.masterGain.connect(this.ctx.destination);
 
     this.musicGain = this.ctx.createGain();
-    this.musicGain.gain.value = 0.35;
-    this.musicGain.connect(this.masterGain);
+    this.musicGain.gain.value = this.musicMuted ? 0 : this.musicMix * this.musicVolume;
+    this.musicGain.connect(this.ctx.destination);
 
     this.sfxGain = this.ctx.createGain();
-    this.sfxGain.gain.value = 0.9;
-    this.sfxGain.connect(this.masterGain);
+    this.sfxGain.gain.value = this.sfxMuted ? 0 : this.sfxMix * this.sfxVolume;
+    this.sfxGain.connect(this.ctx.destination);
 
     void this.loadSamples();
     void this.loadAnnouncerSamples();
@@ -252,11 +255,34 @@ class ChiptuneEngine {
     src.start();
   }
 
-  setMuted(muted: boolean): void {
-    this.muted = muted;
-    if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setTargetAtTime(muted ? 0 : this.volume, this.ctx.currentTime, 0.05);
+  private applyMusicGain(): void {
+    if (this.musicGain && this.ctx) {
+      const target = this.musicMuted ? 0 : this.musicMix * this.musicVolume;
+      this.musicGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
     }
+  }
+  private applySfxGain(): void {
+    if (this.sfxGain && this.ctx) {
+      const target = this.sfxMuted ? 0 : this.sfxMix * this.sfxVolume;
+      this.sfxGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
+    }
+  }
+
+  setMusicVolume(volume: number): void {
+    this.musicVolume = Math.min(1, Math.max(0, volume));
+    this.applyMusicGain();
+  }
+  setSfxVolume(volume: number): void {
+    this.sfxVolume = Math.min(1, Math.max(0, volume));
+    this.applySfxGain();
+  }
+  setMusicMuted(muted: boolean): void {
+    this.musicMuted = muted;
+    this.applyMusicGain();
+  }
+  setSfxMuted(muted: boolean): void {
+    this.sfxMuted = muted;
+    this.applySfxGain();
   }
 
   // ---- SFX -----------------------------------------------------------
@@ -378,6 +404,18 @@ class ChiptuneEngine {
     const pattern = PATTERNS[this.mood];
     if (!pattern) return;
     const stepDur = 60 / pattern.bpm / 2; // 8th notes
+    // Background tabs throttle setInterval heavily (often to ~1/sec), so
+    // `nextNoteTime` can fall far behind `currentTime` while backgrounded.
+    // Without this, the catch-up loop below would fire every missed step in
+    // one burst the moment the tab regains focus — an audible glitch of
+    // overlapping notes. If we've drifted more than a beat behind, just jump
+    // back onto the schedule instead of catching up note-by-note.
+    const maxDrift = stepDur * 4;
+    if (this.nextNoteTime < this.ctx.currentTime - maxDrift) {
+      const missedSteps = Math.floor((this.ctx.currentTime - this.nextNoteTime) / stepDur);
+      this.nextNoteTime += missedSteps * stepDur;
+      this.step += missedSteps;
+    }
     while (this.nextNoteTime < this.ctx.currentTime + this.scheduleAhead) {
       const i = this.step % pattern.bass.length;
       const bassNote = pattern.bass[i];

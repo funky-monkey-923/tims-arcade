@@ -175,10 +175,10 @@ export function step(state: MazeState, input: EngineInput, _dtMs: number, tsMs: 
   const scared = tsMs < state.scaredUntil;
 
   // read held keyboard/gamepad/touch direction each frame
-  if (input.up) state.player.nextDir = { x: 0, y: -1 };
-  else if (input.down) state.player.nextDir = { x: 0, y: 1 };
-  else if (input.left) state.player.nextDir = { x: -1, y: 0 };
-  else if (input.right) state.player.nextDir = { x: 1, y: 0 };
+  if (input.moveUp) state.player.nextDir = { x: 0, y: -1 };
+  else if (input.moveDown) state.player.nextDir = { x: 0, y: 1 };
+  else if (input.moveLeft) state.player.nextDir = { x: -1, y: 0 };
+  else if (input.moveRight) state.player.nextDir = { x: 1, y: 0 };
 
   if (tsMs - state.lastPlayerTick >= TICK_MS) {
     state.lastPlayerTick = tsMs;
@@ -213,6 +213,7 @@ export function step(state: MazeState, input: EngineInput, _dtMs: number, tsMs: 
         state.power = round.power;
         state.player = round.player;
         state.ghosts = round.ghosts;
+        state.scaredUntil = 0;
       }
     }
   }
@@ -251,6 +252,7 @@ export function step(state: MazeState, input: EngineInput, _dtMs: number, tsMs: 
         state.score += 100;
         events.score = state.score;
         events.ateGhost = true;
+        break;
       } else {
         state.lives -= 1;
         events.hitGhost = true;
@@ -263,6 +265,7 @@ export function step(state: MazeState, input: EngineInput, _dtMs: number, tsMs: 
           events.gameOver = state.score;
           return events;
         }
+        break;
       }
     }
   }

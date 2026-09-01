@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { Component, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useArcade } from "../context/ArcadeContext";
 import { engine } from "../lib/audio";
 import { subscribeMenuInput } from "../lib/input";
@@ -8,10 +8,54 @@ import type { GameComponentProps } from "./engineTypes";
 
 type Phase = "ready" | "playing" | "paused" | "gameover";
 
+interface GameErrorBoundaryProps {
+  children: ReactNode;
+  onCrash: () => void;
+}
+interface GameErrorBoundaryState {
+  crashed: boolean;
+}
+
+// Every game is a hand-rolled canvas engine — if one throws (a bug in a
+// single game shouldn't be able to happen, but this is cheap insurance),
+// this stops it from white-screening the whole arcade for a kid. Falls back
+// to a friendly "this game had a hiccup" card with a way back to the menu.
+class GameErrorBoundary extends Component<GameErrorBoundaryProps, GameErrorBoundaryState> {
+  state: GameErrorBoundaryState = { crashed: false };
+
+  static getDerivedStateFromError(): GameErrorBoundaryState {
+    return { crashed: true };
+  }
+
+  componentDidCatch(error: unknown): void {
+    console.error("Game crashed:", error);
+    this.props.onCrash();
+  }
+
+  render() {
+    if (this.state.crashed) {
+      return (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-night/90 p-6 text-center">
+          <p className="font-display font-extrabold text-2xl text-coral">Oops, this game hiccuped!</p>
+          <p className="text-cloud/70 max-w-xs">No worries — your scores are safe. Head back and try again.</p>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("arcade:exit-game"))}
+            className="rounded-full bg-coral px-8 py-3 font-display font-extrabold text-ink hover:bg-coral-2 transition-colors mt-2"
+          >
+            ← Back to Arcade
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 interface TouchOptions {
   showDpad?: boolean;
-  showConfirm?: boolean;
-  showCancel?: boolean;
+  showPrimary?: boolean;
+  showSecondary?: boolean;
 }
 
 interface GameShellProps {
@@ -33,24 +77,39 @@ export default function GameShell({
   subtitle,
   instructions,
   GameComponent,
-  touchOptions = { showDpad: true, showConfirm: false },
+  touchOptions = { showDpad: true, showPrimary: false },
 }: GameShellProps) {
-  const { recordScore, statsFor, activeProfile } = useArcade();
+  const { recordScore, activeProfile } = useArcade();
   const [phase, setPhase] = useState<Phase>("ready");
   const [score, setScore] = useState(0);
   const [best, setBest] = useState<GameStats | null>(null);
   const stageRef = useRef<HTMLElement | null>(null);
   const [stageSize, setStageSize] = useState({ w: 480, h: 480 });
+  // Mirrors `phase` for the ResizeObserver callback below, so the observer
+  // (subscribed once) can read the latest phase without needing to be torn
+  // down and resubscribed on every phase change.
+  const phaseRef = useRef<Phase>(phase);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   useEffect(() => {
     engine.startMusic("action");
     return () => engine.stopMusic();
   }, []);
 
+  // Games only ever see the width/height they were created with in
+  // createState(width, height) — engineTypes.ts doesn't define a contract for
+  // handling a live resize mid-run, so letting the stage change size while
+  // "playing"/"paused" risks visual corruption or lost state in any game
+  // that doesn't defensively handle it. Freeze the stage at whatever size it
+  // was when the round started; only "ready" and "gameover" can resize it
+  // (e.g. rotating a tablet between rounds is safe, rotating mid-race isn't).
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return undefined;
     const ro = new ResizeObserver((entries) => {
+      if (phaseRef.current === "playing" || phaseRef.current === "paused") return;
       const { width, height } = entries[0].contentRect;
       const size = Math.max(200, Math.floor(Math.min(width, height)));
       setStageSize({ w: size, h: size });
@@ -62,21 +121,33 @@ export default function GameShell({
   useEffect(
     () =>
       subscribeMenuInput((action) => {
-        if (action === "pause") {
+        if (action === "PAUSE") {
           setPhase((p) => (p === "playing" ? "paused" : p === "paused" ? "playing" : p));
         }
       }),
     []
   );
 
+  // Music shouldn't keep playing while gameplay is frozen — pause it going
+  // into "paused" and pick back up on resume, mirroring what a kid expects
+  // when they hit pause.
+  useEffect(() => {
+    if (phase === "paused") engine.stopMusic();
+    else if (phase === "playing") engine.startMusic("action");
+  }, [phase]);
+
   const handleGameOver = (finalScore: number) => {
     setScore(finalScore);
     setPhase("gameover");
     engine.stopMusic();
-    recordScore(gameId, finalScore);
-    const stats = statsFor(gameId);
+    // recordScore computes + persists the next state AND returns fresh
+    // GameStats in one synchronous call — deliberately not a separate
+    // recordScore() + statsFor() pair, since statsFor() would still read the
+    // pre-write snapshot (React state updates aren't visible until the next
+    // render). See ArcadeContext.tsx's recordScore for the full explanation.
+    const stats = recordScore(gameId, finalScore);
     setBest(stats);
-    const isNewTop = !!activeProfile && stats.overallBest?.profileId === activeProfile.id && finalScore === stats.overallBest.value;
+    const isNewTop = !!activeProfile && stats.overallBest?.profileId === activeProfile.id && stats.overallBest.value === finalScore;
     if (isNewTop) {
       engine.playSfx("highscore");
       engine.playAnnouncer("highscore");
@@ -92,9 +163,8 @@ export default function GameShell({
     engine.unlock();
     engine.playSfx("start");
     engine.playAnnouncer("ready");
-    engine.startMusic("action");
     setScore(0);
-    setPhase("playing");
+    setPhase("playing"); // the phase effect above starts "action" music on this transition
   };
 
   return (
@@ -119,13 +189,15 @@ export default function GameShell({
           style={{ width: stageSize.w, height: stageSize.h }}
         >
           {phase === "playing" || phase === "paused" ? (
-            <GameComponent
-              width={stageSize.w}
-              height={stageSize.h}
-              paused={phase === "paused"}
-              onScoreUpdate={handleScoreUpdate}
-              onGameOver={handleGameOver}
-            />
+            <GameErrorBoundary onCrash={() => engine.stopMusic()}>
+              <GameComponent
+                width={stageSize.w}
+                height={stageSize.h}
+                paused={phase === "paused"}
+                onScoreUpdate={handleScoreUpdate}
+                onGameOver={handleGameOver}
+              />
+            </GameErrorBoundary>
           ) : null}
 
           {phase === "ready" && (

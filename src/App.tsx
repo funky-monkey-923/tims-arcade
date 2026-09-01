@@ -19,8 +19,8 @@ import type { ComponentType } from "react";
 
 interface TouchOptions {
   showDpad?: boolean;
-  showConfirm?: boolean;
-  showCancel?: boolean;
+  showPrimary?: boolean;
+  showSecondary?: boolean;
 }
 
 interface GameMetaEntry {
@@ -40,49 +40,49 @@ const GAME_META: Record<GameId, GameMetaEntry> = {
     subtitle: "Munch the coins!",
     instructions: "Use arrows, WASD, a controller d-pad, on-screen buttons, or click a direction to steer. Don't hit the walls or yourself!",
     Component: SnakeGame,
-    touchOptions: { showDpad: true, showConfirm: false },
+    touchOptions: { showDpad: true, showPrimary: false },
   },
   pacman: {
     title: "Munch Maze",
     subtitle: "Eat every dot!",
     instructions: "Steer with arrows, WASD, a controller, on-screen buttons, or by clicking a direction. Grab a glowing power dot to turn the chasers blue and gobble them up!",
     Component: MunchMaze,
-    touchOptions: { showDpad: true, showConfirm: false },
+    touchOptions: { showDpad: true, showPrimary: false },
   },
   invaders: {
     title: "Star Defender",
     subtitle: "Defend the galaxy!",
-    instructions: "Move left/right with arrows, WASD, a controller, on-screen buttons, or by dragging on the screen. Press confirm/A/tap the fire button to blast the invaders!",
+    instructions: "Move left/right with arrows, WASD, a controller, on-screen buttons, or by dragging on the screen. Press the action button/A/tap the fire button to blast the invaders!",
     Component: StarDefender,
-    touchOptions: { showDpad: true, showConfirm: true },
+    touchOptions: { showDpad: true, showPrimary: true },
   },
   fighter: {
     title: "Rumble Ring",
     subtitle: "Ready... Fight!",
-    instructions: "Move with arrows/WASD/controller/d-pad, jump with up, block with down, punch with confirm/A, kick with cancel/B. Knock out the rival before time runs out!",
+    instructions: "Move with arrows/WASD/controller/d-pad, jump with up, block with down, punch with the action button/A, kick with the second button/B. Knock out the rival before time runs out!",
     Component: RumbleRing,
-    touchOptions: { showDpad: true, showConfirm: true, showCancel: true },
+    touchOptions: { showDpad: true, showPrimary: true, showSecondary: true },
   },
   soccer: {
     title: "Kickoff Clash",
     subtitle: "First to score wins!",
-    instructions: "Run into the ball to dribble it, move with arrows/WASD/controller/d-pad, and press confirm/A near the ball to blast a shot on goal!",
+    instructions: "Run into the ball to dribble it, move with arrows/WASD/controller/d-pad, and press the action button/A near the ball to blast a shot on goal!",
     Component: KickoffClash,
-    touchOptions: { showDpad: true, showConfirm: true },
+    touchOptions: { showDpad: true, showPrimary: true },
   },
   racing: {
     title: "Turbo Dash",
     subtitle: "Don't crash!",
-    instructions: "Switch lanes with left/right on arrows/WASD/controller/d-pad, and hit confirm/A for a nitro boost that smashes through traffic!",
+    instructions: "Switch lanes with left/right on arrows/WASD/controller/d-pad, and hit the action button/A for a nitro boost that smashes through traffic!",
     Component: TurboDash,
-    touchOptions: { showDpad: true, showConfirm: true },
+    touchOptions: { showDpad: true, showPrimary: true },
   },
 };
 
 type View = "profiles" | "menu" | "leaderboard" | "game";
 
 function Screens() {
-  const { activeProfileId } = useArcade();
+  const { activeProfileId, settings } = useArcade();
   const [view, setView] = useState<View>(activeProfileId ? "menu" : "profiles");
   const [gameId, setGameId] = useState<GameId | null>(null);
 
@@ -91,6 +91,14 @@ function Screens() {
     const detach = attachGlobalInput();
     return detach;
   }, []);
+
+  // Mirrors ArcadeSettings.reducedMotion onto a `.reduce-motion` class on
+  // <html>, matched in index.css alongside the OS-level
+  // prefers-reduced-motion media query — so the in-app setting works
+  // whether or not the device's own OS preference is set.
+  useEffect(() => {
+    document.documentElement.classList.toggle("reduce-motion", settings.reducedMotion);
+  }, [settings.reducedMotion]);
 
   useEffect(() => {
     const onExit = () => {

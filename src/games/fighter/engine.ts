@@ -143,33 +143,33 @@ function stepFighter(
       aiTick();
     } else if (input) {
       let moving = false;
-      if (input.left) {
+      if (input.moveLeft) {
         f.vx = -MOVE_SPEED;
         moving = true;
-      } else if (input.right) {
+      } else if (input.moveRight) {
         f.vx = MOVE_SPEED;
         moving = true;
       } else {
         f.vx = 0;
       }
       f.state = moving ? "walk" : "idle";
-      if (input.up && f.y >= state.ground) {
+      if (input.moveUp && f.y >= state.ground) {
         f.vy = JUMP_V;
         f.state = "jump";
         result.jumped = true;
-      } else if (input.down) {
+      } else if (input.moveDown) {
         f.state = "block";
-      } else if (input.confirm) {
+      } else if (input.primaryAction) {
         startMove(f, "punch");
         result.attackStarted = "punch";
-      } else if (input.cancel) {
+      } else if (input.secondaryAction) {
         startMove(f, "kick");
         result.attackStarted = "kick";
       }
     }
   } else if (f.state === "block") {
     f.vx = 0;
-    if (!(!aiTick && input && input.down)) f.state = "idle";
+    if (!(!aiTick && input && input.moveDown)) f.state = "idle";
   } else if (f.state === "jump") {
     if (f.y >= state.ground && f.vy >= 0) {
       f.state = "idle";
@@ -242,7 +242,7 @@ function cpuAI(state: MatchState, dt: number): void {
   }
 }
 
-function endMatch(state: MatchState, playerWon: boolean): number {
+function endMatch(state: MatchState, playerWon: boolean | null): number {
   state.over = true;
   const bonus = playerWon ? 300 : 0;
   return state.damageDealt + bonus;
@@ -270,7 +270,15 @@ export function step(state: MatchState, input: EngineInput, dtMs: number, _tsMs:
 
   events.score = state.damageDealt;
 
-  if (state.cpu.health <= 0) {
+  if (state.cpu.health <= 0 && state.player.health <= 0) {
+    // Simultaneous double-KO: neither check order nor a coin flip should
+    // silently hand the win to the player — treat it as a draw (no win
+    // bonus for either side).
+    const finalScore = endMatch(state, null);
+    events.score = finalScore;
+    events.gameOver = finalScore;
+    events.won = undefined;
+  } else if (state.cpu.health <= 0) {
     const finalScore = endMatch(state, true);
     events.score = finalScore;
     events.gameOver = finalScore;

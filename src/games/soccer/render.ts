@@ -34,6 +34,15 @@ export function draw(ctx: CanvasRenderingContext2D, state: SoccerState, width: n
   ctx.beginPath();
   ctx.arc(state.player.x, state.player.y, state.player.r, 0, Math.PI * 2);
   ctx.fill();
+  // Which circle is "you" vs the CPU is otherwise conveyed by color alone
+  // (teal vs coral) — both players move freely, so position isn't a
+  // reliable cue either. A white ring around the player-controlled one
+  // gives a shape-based tell that doesn't depend on distinguishing hues.
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(state.player.x, state.player.y, state.player.r + 3, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.fillStyle = "#ff4d8d";
   ctx.beginPath();
   ctx.arc(state.cpu.x, state.cpu.y, state.cpu.r, 0, Math.PI * 2);

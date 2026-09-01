@@ -29,6 +29,7 @@
   --shadow-glow-coral: 0 0 24px 2px rgba(255, 77, 141, 0.55);
   --shadow-glow-teal: 0 0 24px 2px rgba(46, 230, 214, 0.55);
   --shadow-glow-sun: 0 0 24px 2px rgba(255, 212, 59, 0.55);
+  --shadow-glow-lime: 0 0 24px 2px rgba(139, 255, 86, 0.55);
 }
 
 @layer base {
@@ -72,7 +73,12 @@
   }
 }
 
-/* Respect reduced-motion preference across every custom animation */
+/* Respect reduced-motion preference across every custom animation — either
+   the OS-level media query, or the app's own in-app "Reduced motion"
+   setting (App.tsx toggles a `.reduce-motion` class on <html> to match
+   ArcadeSettings.reducedMotion, since a kid — or a parent setting this up
+   for them — might want it on/off independent of whatever the device's OS
+   preference happens to be). */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -82,6 +88,15 @@
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+.reduce-motion,
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
 }
 
 @keyframes bulb-pulse {

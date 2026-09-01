@@ -28,7 +28,11 @@ function NewProfileForm({ onCreate, onCancel }: NewProfileFormProps) {
           placeholder="Type your name"
           maxLength={16}
           autoFocus
-          className="w-full rounded-xl bg-night/60 border-2 border-violet-2 px-4 py-2 mb-4 font-body text-lg text-cloud outline-none focus:border-teal"
+          // No `outline-none` here — unlike CabinetCard, this plain text
+          // input doesn't have its own bespoke focus treatment, so it should
+          // keep the site-wide high-contrast `:focus-visible` outline
+          // (index.css) on top of the teal border-color change below.
+          className="w-full rounded-xl bg-night/60 border-2 border-violet-2 px-4 py-2 mb-4 font-body text-lg text-cloud focus:border-teal"
         />
         <p className="font-display font-bold text-sm mb-2 text-cloud/80">Pick a buddy</p>
         <div className="grid grid-cols-6 gap-2 mb-5">

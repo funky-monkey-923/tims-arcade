@@ -42,13 +42,16 @@ function TouchButton({ label, action, className, shape = "round" }: TouchButtonP
 
 interface TouchControlsProps {
   showDpad?: boolean;
-  showConfirm?: boolean;
-  showCancel?: boolean;
+  showPrimary?: boolean;
+  showSecondary?: boolean;
 }
 
 // On-screen d-pad + action button, shown only for touch/coarse-pointer
-// devices so mouse/keyboard/gamepad users never see it.
-export default function TouchControls({ showDpad = true, showConfirm = true, showCancel = false }: TouchControlsProps) {
+// devices so mouse/keyboard/gamepad users never see it. Only ever rendered
+// during actual gameplay (see GameShell), so its buttons drive
+// PRIMARY_ACTION/SECONDARY_ACTION — the in-game action semantics — not the
+// menu CONFIRM/BACK actions.
+export default function TouchControls({ showDpad = true, showPrimary = true, showSecondary = false }: TouchControlsProps) {
   const [visible] = useState(() => isTouchDevice());
   if (!visible) return null;
 
@@ -57,22 +60,22 @@ export default function TouchControls({ showDpad = true, showConfirm = true, sho
       {showDpad ? (
         <div className="pointer-events-auto grid grid-cols-3 grid-rows-3 gap-1 w-36 h-36">
           <div />
-          <TouchButton label="▲" action="up" className="w-11 h-11" />
+          <TouchButton label="▲" action="MOVE_UP" className="w-11 h-11" />
           <div />
-          <TouchButton label="◀" action="left" className="w-11 h-11" />
+          <TouchButton label="◀" action="MOVE_LEFT" className="w-11 h-11" />
           <div />
-          <TouchButton label="▶" action="right" className="w-11 h-11" />
+          <TouchButton label="▶" action="MOVE_RIGHT" className="w-11 h-11" />
           <div />
-          <TouchButton label="▼" action="down" className="w-11 h-11" />
+          <TouchButton label="▼" action="MOVE_DOWN" className="w-11 h-11" />
           <div />
         </div>
       ) : (
         <div />
       )}
       <div className="pointer-events-auto flex gap-4 items-center">
-        {showCancel && <TouchButton label="✕" action="cancel" className="w-16 h-16 text-xl" />}
-        {showConfirm && (
-          <TouchButton label="A" action="confirm" className="w-20 h-20 text-2xl bg-coral/40! border-coral" />
+        {showSecondary && <TouchButton label="✕" action="SECONDARY_ACTION" className="w-16 h-16 text-xl" />}
+        {showPrimary && (
+          <TouchButton label="A" action="PRIMARY_ACTION" className="w-20 h-20 text-2xl bg-coral/40! border-coral" />
         )}
       </div>
     </div>

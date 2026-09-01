@@ -152,12 +152,12 @@ export function step(state: StarDefenderState, input: EngineInput, _dtMs: number
   if (usingPointer) {
     player.x += (state.pointerTargetX! - player.x) * POINTER_EASE;
   } else {
-    if (input.left) player.x -= PLAYER_SPEED;
-    if (input.right) player.x += PLAYER_SPEED;
+    if (input.moveLeft) player.x -= PLAYER_SPEED;
+    if (input.moveRight) player.x += PLAYER_SPEED;
   }
   player.x = Math.max(player.w / 2, Math.min(state.width - player.w / 2, player.x));
 
-  if (input.confirm && tsMs - state.lastFireTs > FIRE_COOLDOWN) {
+  if (input.primaryAction && tsMs - state.lastFireTs > FIRE_COOLDOWN) {
     state.lastFireTs = tsMs;
     bullets.push({ x: player.x, y: player.y - player.h, vy: -BULLET_SPEED, from: "player" });
     events.shot = true;
@@ -198,7 +198,9 @@ export function step(state: StarDefenderState, input: EngineInput, _dtMs: number
   }
 
   // bullets
+  let hitThisTick = false;
   for (let i = bullets.length - 1; i >= 0; i--) {
+    if (hitThisTick) break;
     const b = bullets[i];
     b.y += b.vy;
     if (b.y < -10 || b.y > state.height + 10) {
@@ -223,6 +225,7 @@ export function step(state: StarDefenderState, input: EngineInput, _dtMs: number
       if (Math.abs(b.x - player.x) < player.w / 2 + 4 && Math.abs(b.y - player.y) < player.h) {
         bullets.splice(i, 1);
         loseLife(state, events);
+        hitThisTick = true;
       }
     }
   }
