@@ -85,7 +85,7 @@ export type SfxName =
   // shared
   | "countdown"
   | "fanfare";
-export type MusicMood = "menu" | "action" | "sports" | "race";
+export type MusicMood = "menu" | "action" | "sports" | "race" | "space" | "fight";
 export type AnnouncerName =
   | "ready"
   | "gameover"
@@ -252,6 +252,33 @@ const PATTERNS: Record<MusicMood, Pattern> = {
     lead: [
       "D5", "F5", "A5", "F5", "D5", "F5", "A5", "C6",
       "As5", "A5", "G5", "F5", "E5", "G5", "F5", "D5",
+    ],
+  },
+  // Star Defender: deliberately sparser and more echoey than the other three
+  // moods — a space shooter's identity is tension and isolation, not the
+  // driving energy of a sport/race track. Long rests in both bass and lead
+  // (as opposed to action's dense straight-eighths) leave room for the
+  // blaster/impact sfx to read clearly against the music instead of
+  // competing with it.
+  space: {
+    bpm: 132,
+    bass: ["D2", null, null, null, "A2", null, null, null, "F2", null, null, null, "G2", null, null, null],
+    lead: [
+      null, "D5", null, "A4", null, "F5", null, "D5",
+      null, "C5", null, "G4", null, "E5", null, null,
+    ],
+  },
+  // Rumble Ring: tense, percussive E-minor stabs instead of a flowing
+  // melody — a straight-eighths root pulse (with rests, so it lands like a
+  // heartbeat rather than a wall of sound) under a lead that jabs and
+  // retreats, echoing the punch/block rhythm of a fight rather than
+  // narrating over it.
+  fight: {
+    bpm: 140,
+    bass: ["E2", "E2", null, "E2", "E2", "E2", null, "E2", "G2", "G2", null, "G2", "F2", "F2", null, "F2"],
+    lead: [
+      "E5", null, "G5", null, "E5", null, "B4", null,
+      "E5", null, "G5", null, "Fs5", null, "E5", null,
     ],
   },
 };

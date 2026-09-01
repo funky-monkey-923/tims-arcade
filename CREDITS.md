@@ -135,6 +135,103 @@ Two of these landed in the regular sample-with-synth-fallback system (`src/lib/a
 
 Wired into `GameShell.tsx` (shared by every game, not per-game) since it's about the moment — round start / game over / new best — not about any one game's mechanics.
 
+## Batch 4 — added 2026-09-01, artistic overhaul of Kickoff Clash / Turbo Dash
+
+Curated from packs already downloaded for Batch 2/3 (`kenney_sports-pack`,
+`kenney_racing-pack`, `kenney_background-elements-remastered`), plus more
+Impact Sounds, Music Jingles, Interface Sounds, Sci-Fi Sounds, and Voiceover
+Pack #1 clips for the new dedicated SFX/announcer lines. Everything below has
+a hand-drawn canvas fallback if it hasn't loaded yet, same as every prior
+batch.
+
+### Sprites
+
+| File | From (pack / original name) | Used for |
+|---|---|---|
+| `sprites/player-blue-a.png`, `player-blue-b.png` | Sports Pack `PNG/Blue/characterBlue (1/5).png` | Kickoff Clash — player + teammate |
+| `sprites/player-red-a.png`, `player-red-b.png` | Sports Pack `PNG/Red/characterRed (2/9).png` | Kickoff Clash — the two CPU opponents |
+| `sprites/keeper-green.png` | Sports Pack `PNG/Green/characterGreen (4).png` | Kickoff Clash — penalty-shootout keeper |
+| `sprites/car-rival-red.png`, `car-rival-blue.png`, `car-rival-yellow.png` | Racing Pack `PNG/Cars/car_{red,blue,yellow}_2.png` | Turbo Dash — the 3 named AI rivals (Red Comet/Blue Blaze/Gold Rush). Deliberately the "\_2" body shape, distinct from the "\_1" shape used by the player car and traffic obstacles. |
+| `sprites/roadside-bush-1.png`, `roadside-bush-2.png` | Background Elements Remastered `bush1.png`/`bush2.png` | Turbo Dash — roadside scenery |
+| `sprites/roadside-cone.png`, `roadside-barrel.png`, `roadside-barrier.png` | Racing Pack `PNG/Objects/cone_straight.png`/`barrel_red.png`/`barrier_white_race.png` | Turbo Dash — roadside scenery |
+| `sprites/cloud-1.png`, `cloud-2.png` | Background Elements Remastered `cloud1.png`/`cloud3.png` | Turbo Dash — drifting sky parallax layer |
+| `sprites/start-lights.png` | Racing Pack `PNG/Objects/lights.png` | Turbo Dash — pre-race start gantry (the actual red→green countdown lights are drawn as an overlay, since this sprite has no baked light-state frames) |
+
+Player sprites face **+X (right)** at rest — `PLAYER_SPRITE_FACING = 0` in
+`src/lib/sprites.ts` documents this so a future asset swap only needs to
+change one constant if the new art's rest orientation differs.
+
+### Sound effects
+
+| File | From (pack / original name) | Used for |
+|---|---|---|
+| `sfx/kick.ogg` | Impact Sounds `impactSoft_heavy_002.ogg` | Kickoff Clash — striking the ball |
+| `sfx/net.ogg` | Impact Sounds `impactSoft_medium_004.ogg` | Kickoff Clash — ball hitting the net |
+| `sfx/crash.ogg` | Impact Sounds `impactMetal_heavy_001.ogg` | Turbo Dash — crashing |
+| `sfx/boost.ogg` | Sci-Fi Sounds `thrusterFire_002.ogg` (trimmed/faded) | Turbo Dash — nitro activation |
+| `sfx/countdown.ogg` | Interface Sounds `bong_001.ogg` | Shared — pre-round "3…2…1" beat (Kickoff Clash kickoff, Turbo Dash start lights) |
+| `sfx/goal-horn.ogg` | Music Jingles `Steel jingles/jingles_STEEL02.ogg` | Kickoff Clash — a goal |
+| `sfx/fanfare.ogg` | Music Jingles `8-Bit jingles/jingles_NES00.ogg` | Shared — match/race win |
+| `sfx/voice-1.ogg`, `voice-2.ogg`, `voice-3.ogg`, `voice-go.ogg`, `voice-set.ogg` | Voiceover Pack #1, Male `1.ogg`/`2.ogg`/`3.ogg`/`go.ogg`/`set.ogg` | Shared — countdown announcer ("three"/"two"/"one"/"set"/"go") |
+| `sfx/voice-final-round.ogg` | Voiceover Pack #1, Male `final_round.ogg` | Kickoff Clash — second-half kickoff |
+| `sfx/voice-hurry-up.ogg` | Voiceover Pack #1, Male `hurry_up.ogg` | Kickoff Clash — closing seconds of a half |
+| `sfx/voice-you-win.ogg` | Voiceover Pack #1, Male `you_win.ogg` | Shared — match/race won |
+| `sfx/voice-tie.ogg` | Voiceover Pack #1, Male `its_a_tie.ogg` | Kickoff Clash — drawn match |
+| `sfx/voice-time-over.ogg` | Voiceover Pack #1, Male `time_over.ogg` | Kickoff Clash — full-time, non-win/tie case |
+
+The referee **whistle** heard at kickoff/halftime/full-time in Kickoff Clash
+is fully synthesized (`whistleSynth()` in `src/lib/audio.ts`), not a sample —
+no Kenney pack ships one, and it's a sound a kid will recognize instantly, so
+it seemed worth getting right rather than approximating with a
+close-but-wrong sample. Likewise the synthesized stadium **crowd ambience**
+(`startCrowd`/`cheer`/`setCrowdLevel`/`stopCrowd`) is filtered noise, not a
+sample — a real crowd loop would have dwarfed every other audio asset in the
+bundle for a worse result.
+
+Two new gameplay/UI music moods were added to the existing synthesized
+chiptune scheduler (`PATTERNS` in `src/lib/audio.ts`, no new files needed):
+`"sports"` (a slower, chant-like stadium anthem) for Kickoff Clash, and
+`"race"` (the fastest, most relentless of the four) for Turbo Dash — both
+replace the generic `"action"` mood these two games shared with every other
+game before this batch.
+
+## Batch 5 — added 2026-09-01, artistic overhaul of Star Defender / Rumble Ring
+
+Curated from packs already downloaded for earlier batches
+(`kenney_space-shooter-extension`, `kenney_platformer-pack-remastered`,
+`kenney_toon-characters`). This batch closes the last real visual gap in the
+arcade — Rumble Ring previously had zero character sprites of any kind.
+
+### Sprites
+
+| File | From (pack / original name) | Used for |
+|---|---|---|
+| `sprites/boss-ship.png` | Space Shooter Extension `PNG/Sprites/Ships/spaceShips_006.png` | Star Defender — boss enemy. A different, bulkier ship design from the player's own `spaceShips_001` (`ship-player.png`, Batch 2), scaled up, so the boss doesn't share a silhouette with the player. |
+| `sprites/bunker-crate.png` | Platformer Pack Remastered `PNG/Tiles/boxCrate.png` | Star Defender — bunker tile texture (tiled per surviving bunker cell, replacing a flat filled rectangle) |
+| `sprites/fighter-blaze-*.png` (8 poses: idle/attack0/attackkick/hurt/jump/duck/walk0/walk1) | Toon Characters, Male Adventurer `character_maleAdventurer_*.png` | Rumble Ring — "Blaze" (the balanced fighter) |
+| `sprites/fighter-turbo-*.png` (same 8 poses) | Toon Characters, Female Adventurer `character_femaleAdventurer_*.png` | Rumble Ring — "Turbo" (fast & light) |
+| `sprites/fighter-titan-*.png` (same 8 poses) | Toon Characters, Robot `character_robot_*.png` | Rumble Ring — "Titan" (slow & heavy) — the blocky mechanical design was picked deliberately to match Titan's "hits like a truck" stats |
+
+No sprite exists in any available pack for a classic flying-saucer UFO —
+Star Defender's UFO is fully hand-drawn/procedural instead (gradient-shaded
+saucer body, dome, pulsing rim lights, a gentle bob), the same approach used
+for the crowd-ambience audio in Batch 4: sometimes a deliberate procedural
+effect beats forcing in a mismatched asset.
+
+Every fighter pose set is only drawn once *all 8 frames* have loaded
+(`fighterPoseSetReady()` in `src/lib/sprites.ts`) — falling back to the
+original flat-rectangle look otherwise — so a slow connection can never show
+a character mid-match with some frames as real art and others as placeholder
+shapes.
+
+### Music
+
+Two more dedicated moods were added to `PATTERNS` in `src/lib/audio.ts`,
+same mechanism as Batch 4's `"sports"`/`"race"`: `"space"` (sparse,
+rest-heavy) for Star Defender and `"fight"` (tense, percussive, minor-key)
+for Rumble Ring — both replace the generic `"action"` mood these two games
+previously shared with every other unassigned game.
+
 ## Where things live
 
 - `asset-packs/` — the original, unmodified Kenney downloads for all three batches (source of truth for the above; gitignored, ~170MB combined, not shipped)

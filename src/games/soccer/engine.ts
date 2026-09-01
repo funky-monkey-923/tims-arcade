@@ -103,6 +103,12 @@ export interface PlayerChar extends Entity {
   rightReleasedAt: number | null;
   dodgeUntil: number; // tsMs the current dodge speed-burst ends
   dodgeCooldownUntil: number;
+  // Facing direction in radians, derived from movement each step — purely a
+  // rendering hint (render.ts rotates the player sprite by this), never read
+  // by any gameplay rule here. Defaults to facing the player's attacking
+  // (right) goal and only updates while actually moving, so it holds steady
+  // rather than snapping to 0 the instant input releases.
+  heading: number;
 }
 
 // Any of the 3 non-player bodies (1 teammate, 2 opponents) — a reaction-
@@ -113,6 +119,8 @@ export interface AIChar extends Entity {
   vx: number; // current decided per-frame movement (already speed-scaled)
   vy: number;
   chargeUntil: number | null; // tsMs this AI will release its shot, null when not charging
+  // Same rendering-only facing hint as PlayerChar.heading — see there.
+  heading: number;
 }
 
 export type MatchPhase = "playing" | "halftime" | "shootout" | "over";
@@ -194,20 +202,21 @@ function makePlayer(x: number, y: number, r: number): PlayerChar {
     rightReleasedAt: null,
     dodgeUntil: 0,
     dodgeCooldownUntil: 0,
+    heading: 0, // faces right, toward the player's attacking goal
   };
 }
 
-function makeAI(x: number, y: number, r: number): AIChar {
-  return { x, y, r, brain: 0, vx: 0, vy: 0, chargeUntil: null };
+function makeAI(x: number, y: number, r: number, heading = Math.PI): AIChar {
+  return { x, y, r, brain: 0, vx: 0, vy: 0, chargeUntil: null, heading };
 }
 
 function resetPositions(state: SoccerState): void {
   const { width, height } = state;
   const r = Math.max(12, width * 0.035);
   Object.assign(state.player, makePlayer(width * 0.3, height * 0.35, r));
-  Object.assign(state.teammate, makeAI(width * 0.3, height * 0.65, r));
-  Object.assign(state.opp1, makeAI(width * 0.7, height * 0.35, r));
-  Object.assign(state.opp2, makeAI(width * 0.7, height * 0.65, r));
+  Object.assign(state.teammate, makeAI(width * 0.3, height * 0.65, r, 0));
+  Object.assign(state.opp1, makeAI(width * 0.7, height * 0.35, r, Math.PI));
+  Object.assign(state.opp2, makeAI(width * 0.7, height * 0.65, r, Math.PI));
   Object.assign(state.ball, resetBall(width, height));
 }
 
@@ -217,9 +226,9 @@ export function createState(width: number, height: number, difficulty: Difficult
     width,
     height,
     player: makePlayer(width * 0.3, height * 0.35, r),
-    teammate: makeAI(width * 0.3, height * 0.65, r),
-    opp1: makeAI(width * 0.7, height * 0.35, r),
-    opp2: makeAI(width * 0.7, height * 0.65, r),
+    teammate: makeAI(width * 0.3, height * 0.65, r, 0),
+    opp1: makeAI(width * 0.7, height * 0.35, r, Math.PI),
+    opp2: makeAI(width * 0.7, height * 0.65, r, Math.PI),
     ball: resetBall(width, height),
     playerGoals: 0,
     cpuGoals: 0,
@@ -325,6 +334,7 @@ function stepPlayer(state: SoccerState, input: EngineInput, dtMs: number, tsMs: 
     const len = Math.hypot(dx, dy) || 1;
     player.x += (dx / len) * speed;
     player.y += (dy / len) * speed;
+    player.heading = Math.atan2(dy, dx);
   }
   player.x = Math.max(player.r, Math.min(width - player.r, player.x));
   player.y = Math.max(player.r, Math.min(height - player.r, player.y));
@@ -412,6 +422,7 @@ function stepAI(
     const tlen = Math.hypot(tdx, tdy) || 1;
     ai.vx = (tdx / tlen) * opts.speed;
     ai.vy = (tdy / tlen) * opts.speed;
+    if (ai.vx !== 0 || ai.vy !== 0) ai.heading = Math.atan2(ai.vy, ai.vx);
 
     if (opts.chase && distToBall < ai.r + ball.r + 8 && Math.random() < opts.shootAggro) {
       ai.chargeUntil = tsMs + opts.chargeMs;

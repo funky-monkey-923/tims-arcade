@@ -14,6 +14,10 @@ export default function SnakeGame({ width, height, paused, onScoreUpdate, onGame
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stateRef = useRef<SnakeState | null>(null);
   const rafRef = useRef<number>(0);
+  // Tracks whether a pointer is currently held down on the canvas, so drag
+  // ("move") samples only turn the snake while actively dragging rather than
+  // on every incidental pointer move over the element.
+  const isDraggingRef = useRef(false);
 
   useEffect(() => {
     stateRef.current = snakeEngine.createState(width);
@@ -23,8 +27,22 @@ export default function SnakeGame({ width, height, paused, onScoreUpdate, onGame
     const canvas = canvasRef.current;
     const state = stateRef.current;
     if (!canvas || !state) return;
+    isDraggingRef.current = true;
     const rect = canvas.getBoundingClientRect();
     snakeEngine.onPointer(state, { x: e.clientX - rect.left, y: e.clientY - rect.top, kind: "down" });
+  };
+
+  const handlePointerMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!isDraggingRef.current) return;
+    const canvas = canvasRef.current;
+    const state = stateRef.current;
+    if (!canvas || !state) return;
+    const rect = canvas.getBoundingClientRect();
+    snakeEngine.onPointer(state, { x: e.clientX - rect.left, y: e.clientY - rect.top, kind: "move" });
+  };
+
+  const endDrag = () => {
+    isDraggingRef.current = false;
   };
 
   useEffect(() => {
@@ -71,6 +89,10 @@ export default function SnakeGame({ width, height, paused, onScoreUpdate, onGame
       width={width}
       height={height}
       onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onPointerLeave={endDrag}
       className="block touch-none"
       role="img"
       aria-label="Wiggle Worm snake game"

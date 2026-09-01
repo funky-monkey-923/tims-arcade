@@ -49,6 +49,8 @@ export default function MunchMaze({ width, height, paused, onScoreUpdate, onGame
         else if (events.atePower) engine.playSfx("powerup");
         else if (events.wonWave) engine.playSfx("clear");
         else if (events.ateGhost) engine.playSfx("coin");
+        else if (events.ateFruit) engine.playSfx("coin");
+        else if (events.ateSpeedPellet) engine.playSfx("powerup");
         if (events.hitGhost) engine.playSfx("hit");
         if (events.gameOver !== undefined) onGameOver(events.gameOver);
       }

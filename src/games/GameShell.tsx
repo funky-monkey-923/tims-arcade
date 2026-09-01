@@ -18,6 +18,8 @@ type Phase = "ready" | "playing" | "paused" | "gameover";
 const MUSIC_MOOD_BY_GAME: Partial<Record<GameId, MusicMood>> = {
   soccer: "sports",
   racing: "race",
+  invaders: "space",
+  fighter: "fight",
 };
 
 interface GameErrorBoundaryProps {

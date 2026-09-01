@@ -165,12 +165,21 @@ export interface StarDefenderState {
 export interface StarDefenderEvents extends EngineEvents {
   shot?: boolean;
   enemyDestroyed?: boolean;
+  // Cosmetic-only coordinates for the render layer's particle/shake triggers
+  // (see render.ts) — pure data, no gameplay meaning, so adding them here
+  // keeps engine.ts's "no DOM/canvas" rule intact while still letting the UI
+  // layer know *where* a moment happened instead of re-deriving it.
+  enemyDestroyedAt?: { x: number; y: number };
   waveClear?: boolean;
   hit?: boolean;
   powerupCollected?: PowerupKind;
   shieldBlocked?: boolean;
   bossDefeated?: boolean;
+  bossDefeatedAt?: { x: number; y: number };
+  bossHit?: boolean;
+  bossHitAt?: { x: number; y: number };
   ufoHit?: boolean;
+  ufoHitAt?: { x: number; y: number };
 }
 
 function pickEnemyType(): EnemyType {
@@ -531,11 +540,14 @@ export function step(state: StarDefenderState, input: EngineInput, dtMs: number,
           boss.hp -= 1;
           bullets.splice(i, 1);
           state.explosions.push({ x: b.x, y: b.y, until: tsMs + 200 });
+          events.bossHit = true;
+          events.bossHitAt = { x: b.x, y: b.y };
           if (boss.hp <= 0) {
             state.score += BOSS_BONUS;
             events.score = state.score;
             events.enemyDestroyed = true;
             events.bossDefeated = true;
+            events.bossDefeatedAt = { x: boss.x, y: boss.y };
             events.waveClear = true;
             advanceToNextWave(state);
           }
@@ -556,6 +568,7 @@ export function step(state: StarDefenderState, input: EngineInput, dtMs: number,
               state.score += points;
               events.score = state.score;
               events.enemyDestroyed = true;
+              events.enemyDestroyedAt = { x: ex, y: e.y };
               state.explosions.push({ x: ex, y: e.y, until: tsMs + 260 });
               maybeDropPowerup(state, ex, e.y, e.type);
             }
@@ -573,6 +586,7 @@ export function step(state: StarDefenderState, input: EngineInput, dtMs: number,
           state.score += UFO_BONUS;
           events.score = state.score;
           events.ufoHit = true;
+          events.ufoHitAt = { x: ufo.x, y: ufo.y };
           state.explosions.push({ x: ufo.x, y: ufo.y, until: tsMs + 260 });
           state.ufo = null;
           state.nextUfoAt = tsMs + UFO_MIN_GAP_MS + Math.random() * (UFO_MAX_GAP_MS - UFO_MIN_GAP_MS);

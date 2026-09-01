@@ -3,7 +3,7 @@ import { controls } from "../../lib/input";
 import { engine } from "../../lib/audio";
 import * as fighterEngine from "./engine";
 import { CHARACTERS, type Difficulty, type MatchState } from "./engine";
-import { draw } from "./render";
+import { draw, onBlock, onHitLanded, onKo, resetEffects } from "./render";
 import type { GameComponentProps } from "../engineTypes";
 
 const DIFFICULTY_OPTIONS: { id: Difficulty; label: string; blurb: string }[] = [
@@ -53,7 +53,21 @@ export default function RumbleRing({ width, height, paused, onScoreUpdate, onGam
     if (!setup) return;
     stateRef.current = fighterEngine.createState(width, height, setup.charId, setup.difficulty);
     roundEndAtRef.current = null;
+    // render.ts's particles/shake/banner timing are module-scope, not part of
+    // MatchState — GameShell fully unmounts/remounts between playthroughs,
+    // but a fresh setup here can still follow a previous match within the
+    // same mount (e.g. picking a new character), so clear explicitly rather
+    // than relying on unmount alone.
+    resetEffects();
   }, [width, height, setup]);
+
+  // Stadium-style crowd ambience runs for the lifetime of this component —
+  // present even on the character-select screen, not just during a round —
+  // and is stopped on unmount so it never bleeds into the arcade menu.
+  useEffect(() => {
+    engine.startCrowd();
+    return () => engine.stopCrowd();
+  }, []);
 
   useEffect(() => {
     if (!setup) return undefined;
@@ -79,10 +93,45 @@ export default function RumbleRing({ width, height, paused, onScoreUpdate, onGam
           );
 
           if (events.playerJumped || events.cpuJumped) engine.playSfx("jump");
-          if (events.playerAttackStarted === "super" || events.cpuAttackStarted === "super") engine.playSfx("powerup");
-          else if (events.playerAttackStarted || events.cpuAttackStarted) engine.playSfx("move");
-          if (events.hitLanded) engine.playSfx("hit");
-          else if (events.hitBlocked) engine.playSfx("move");
+          if (events.playerAttackStarted === "super" || events.cpuAttackStarted === "super") {
+            engine.playSfx("powerup");
+          } else if (events.playerAttackStarted === "throw" || events.cpuAttackStarted === "throw") {
+            // A grab-and-heave reads better as an ascending swell than the
+            // generic "move" blip both punch/kick windup and blocked hits
+            // used to share — see the file-level SFX notes below.
+            engine.playSfx("boost");
+          } else if (events.playerAttackStarted || events.cpuAttackStarted) {
+            // Punch/kick windup: a quick whoosh, distinct from both the
+            // throw's heavier swell above and the "hit"/"net" impact sounds
+            // below.
+            engine.playSfx("skid");
+          }
+          if (events.hitLanded) {
+            engine.playSfx("hit");
+            // Position is approximate — the midpoint between the two
+            // fighters at roughly torso height — since these hooks are
+            // purely decorative (particles/shake), not gameplay.
+            const hx = (state.player.x + state.cpu.x) / 2;
+            const hy = state.ground - height * 0.12;
+            const heavy = state.player.state === "super" || state.cpu.state === "super";
+            onHitLanded(hx, hy, heavy);
+            engine.cheer(heavy ? 1 : 0.55, heavy ? 1600 : 700);
+          } else if (events.hitBlocked) {
+            // A softer, lighter parry sound — clearly distinguishable from
+            // "hit" landing unblocked, unlike the old shared "move" blip.
+            engine.playSfx("net");
+            const hx = (state.player.x + state.cpu.x) / 2;
+            const hy = state.ground - height * 0.12;
+            onBlock(hx, hy);
+          }
+
+          // Tension rises as the round clock runs low or either fighter's
+          // health gets critical — a rising crowd murmur under the fight
+          // music, settling back once neither condition holds.
+          const timeTension = state.timeLeft < 10000 ? 1 - state.timeLeft / 10000 : 0;
+          const lowestHealth = Math.min(state.player.health, state.cpu.health);
+          const healthTension = lowestHealth <= 30 ? 1 - lowestHealth / 30 : 0;
+          engine.setCrowdLevel(0.15 + Math.max(timeTension, healthTension) * 0.6);
 
           if (events.score !== undefined) {
             onScoreUpdate(events.score);
@@ -100,10 +149,22 @@ export default function RumbleRing({ width, height, paused, onScoreUpdate, onGam
           // the `if` above and can't see that step() just mutated it.
           if (events.roundOver && events.gameOver === undefined && roundEndAtRef.current === null) {
             roundEndAtRef.current = ts;
+            const isKo = state.player.health <= 0 || state.cpu.health <= 0;
+            if (isKo) {
+              const loser = state.player.health <= 0 ? state.player : state.cpu;
+              onKo(loser.x, state.ground - height * 0.14);
+              engine.playSfx("fanfare");
+              engine.cheer(1, 1800);
+            }
             engine.playSfx("clear");
           }
           if (events.gameOver !== undefined) {
             lastDifficulty = state.difficulty;
+            const isKo = state.player.health <= 0 || state.cpu.health <= 0;
+            if (isKo) {
+              const loser = state.player.health <= 0 ? state.player : state.cpu;
+              onKo(loser.x, state.ground - height * 0.14);
+            }
             engine.playSfx(events.won ? "clear" : "gameover");
             onGameOver(events.gameOver);
           }

@@ -2,7 +2,18 @@
 // half's rendering concern, kept separate from engine.ts's game rules.
 
 import { SPRITES, GHOST_SPRITES, isReady } from "../../lib/sprites";
-import { ROWS, COLS, type MazeState } from "./engine";
+import { ROWS, COLS, type MazeState, type GhostPersonality } from "./engine";
+
+// Fixed personality -> sprite mapping so a given personality always looks
+// the same regardless of which wave first spawns it (see ghostCountForWave
+// in engine.ts) — a kid can learn "the spiky one always hunts me" once and
+// have it hold across every wave.
+const PERSONALITY_SPRITE_INDEX: Record<GhostPersonality, number> = {
+  chaser: 3, // ghostSpike — the always-aggressive hunter gets the spikiest look
+  ambusher: 1, // ghostFly — swoops ahead to cut the player off
+  wanderer: 2, // ghostFloat — aimless drifting
+  lateActivator: 0, // ghostWalk — plain-looking until it "wakes up"
+};
 
 function drawGhost(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string, scared: boolean): void {
   const r = size / 2;
@@ -72,11 +83,53 @@ export function draw(ctx: CanvasRenderingContext2D, state: MazeState, ts: number
     }
   });
 
-  state.ghosts.forEach((g, i) => {
+  if (state.fruit) {
+    const fx = offX + (state.fruit.c + 0.5) * cell;
+    const fy = offY + (state.fruit.r + 0.5) * cell;
+    const fr = cell * 0.36;
+    if (isReady(SPRITES.starBadge)) {
+      ctx.drawImage(SPRITES.starBadge, fx - fr, fy - fr, fr * 2, fr * 2);
+    } else {
+      // Hand-drawn 5-point star fallback if the sprite hasn't loaded.
+      ctx.fillStyle = "#ff9f1c";
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const rad = i % 2 === 0 ? fr : fr * 0.45;
+        const angle = (Math.PI / 5) * i - Math.PI / 2;
+        const sx = fx + Math.cos(angle) * rad;
+        const sy = fy + Math.sin(angle) * rad;
+        if (i === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  if (state.speedPellet) {
+    const sx0 = offX + (state.speedPellet.c + 0.5) * cell;
+    const sy0 = offY + (state.speedPellet.r + 0.5) * cell;
+    const boltPulse = 0.75 + 0.25 * Math.sin(ts / 90);
+    const s = cell * 0.34 * boltPulse;
+    // Hand-drawn lightning bolt — no dedicated sprite for this pickup, so it
+    // stays a simple canvas path (still 100% render.ts's concern).
+    ctx.fillStyle = "#5cf5ff";
+    ctx.beginPath();
+    ctx.moveTo(sx0 + s * 0.15, sy0 - s);
+    ctx.lineTo(sx0 - s * 0.5, sy0 + s * 0.1);
+    ctx.lineTo(sx0 - s * 0.05, sy0 + s * 0.1);
+    ctx.lineTo(sx0 - s * 0.15, sy0 + s);
+    ctx.lineTo(sx0 + s * 0.5, sy0 - s * 0.1);
+    ctx.lineTo(sx0 + s * 0.05, sy0 - s * 0.1);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  state.ghosts.forEach((g) => {
     const gx = offX + (g.c + 0.5) * cell;
     const gy = offY + (g.r + 0.5) * cell;
     const size = cell * 0.85;
-    const sprite = GHOST_SPRITES[i % GHOST_SPRITES.length];
+    const sprite = GHOST_SPRITES[PERSONALITY_SPRITE_INDEX[g.personality]];
     if (isReady(sprite)) {
       const half = size / 2;
       ctx.drawImage(sprite, gx - half, gy - half, size, size);

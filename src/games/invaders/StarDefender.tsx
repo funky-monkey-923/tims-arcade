@@ -3,7 +3,7 @@ import { controls } from "../../lib/input";
 import { engine } from "../../lib/audio";
 import * as invadersEngine from "./engine";
 import type { StarDefenderState, Difficulty } from "./engine";
-import { draw } from "./render";
+import { draw, resetEffects, onEnemyKilled, onPlayerHit, onBossHit, onBossDefeated, onWaveClear, onUfoHit } from "./render";
 import type { GameComponentProps } from "../engineTypes";
 
 const DIFFICULTY_OPTIONS: { id: Difficulty; label: string; blurb: string }[] = [
@@ -35,6 +35,10 @@ export default function StarDefender({ width, height, paused, onScoreUpdate, onG
   useEffect(() => {
     if (!difficulty) return;
     stateRef.current = invadersEngine.createState(width, height, difficulty);
+    // render.ts's particles/shake/starfield/banner state is module-scope, not
+    // part of StarDefenderState, so it survives this remount unless cleared
+    // explicitly — see resetEffects()'s doc comment in render.ts.
+    resetEffects();
   }, [width, height, difficulty]);
 
   const handlePointerMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -65,13 +69,36 @@ export default function StarDefender({ width, height, paused, onScoreUpdate, onG
         );
         if (events.score !== undefined) onScoreUpdate(events.score);
         if (events.shot) engine.playSfx("shoot");
-        if (events.enemyDestroyed) engine.playSfx("coin");
-        if (events.waveClear) engine.playSfx("clear");
-        if (events.hit) engine.playSfx("hit");
+        // enemyDestroyed also fires (alongside bossDefeated) when the killing
+        // blow is what drops the boss — guard so that moment gets its own
+        // fanfare below instead of doubling up with the regular "coin" blip.
+        if (events.enemyDestroyed && !events.bossDefeated) {
+          engine.playSfx("coin");
+          if (events.enemyDestroyedAt) onEnemyKilled(events.enemyDestroyedAt.x, events.enemyDestroyedAt.y);
+        }
+        if (events.bossHit && !events.bossDefeated) {
+          engine.playSfx("hit");
+          if (events.bossHitAt) onBossHit(events.bossHitAt.x, events.bossHitAt.y);
+        }
+        if (events.bossDefeated) {
+          engine.playSfx("fanfare");
+          if (events.bossDefeatedAt) onBossDefeated(events.bossDefeatedAt.x, events.bossDefeatedAt.y, ts);
+        } else if (events.waveClear) {
+          engine.playSfx("clear");
+          onWaveClear(ts);
+        }
+        if (events.hit) {
+          engine.playSfx("hit");
+          onPlayerHit(state.player.x, state.player.y);
+        }
         if (events.powerupCollected) engine.playSfx("powerup");
         if (events.shieldBlocked) engine.playSfx("powerup");
-        if (events.ufoHit) engine.playSfx("coin");
-        if (events.bossDefeated) engine.playSfx("highscore");
+        if (events.ufoHit) {
+          // A rare, special-feeling bonus hit gets its own distinct sound
+          // rather than doubling up on "coin" (used for regular kills).
+          engine.playSfx("highscore");
+          if (events.ufoHitAt) onUfoHit(events.ufoHitAt.x, events.ufoHitAt.y);
+        }
         if (events.gameOver !== undefined) {
           lastDifficulty = state.difficulty;
           onGameOver(events.gameOver);

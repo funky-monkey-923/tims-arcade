@@ -58,6 +58,45 @@ import cloud1Url from "../assets/game/sprites/cloud-1.png";
 import cloud2Url from "../assets/game/sprites/cloud-2.png";
 import startLightsUrl from "../assets/game/sprites/start-lights.png";
 
+// Added 2026-09-01 for the Star Defender / Rumble Ring artistic overhaul.
+// Fighter poses come from the Kenney "Toon Characters" pack, which ships a
+// full pose set per character (idle/attack/hurt/jump/duck/walk) rather than
+// a single static image — that's what makes real animation states possible
+// instead of one frozen sprite. Each of the 3 CHARACTERS in
+// src/games/fighter/engine.ts gets its own character type so they read as
+// visually distinct, not just recolored: Blaze (balanced) -> the male
+// adventurer, Turbo (fast/light) -> the female adventurer, Titan (slow/heavy)
+// -> the robot, whose blocky silhouette matches its "hits like a truck" stats.
+import fighterBlazeIdleUrl from "../assets/game/sprites/fighter-blaze-idle.png";
+import fighterBlazeAttack0Url from "../assets/game/sprites/fighter-blaze-attack0.png";
+import fighterBlazeAttackKickUrl from "../assets/game/sprites/fighter-blaze-attackkick.png";
+import fighterBlazeHurtUrl from "../assets/game/sprites/fighter-blaze-hurt.png";
+import fighterBlazeJumpUrl from "../assets/game/sprites/fighter-blaze-jump.png";
+import fighterBlazeDuckUrl from "../assets/game/sprites/fighter-blaze-duck.png";
+import fighterBlazeWalk0Url from "../assets/game/sprites/fighter-blaze-walk0.png";
+import fighterBlazeWalk1Url from "../assets/game/sprites/fighter-blaze-walk1.png";
+import fighterTurboIdleUrl from "../assets/game/sprites/fighter-turbo-idle.png";
+import fighterTurboAttack0Url from "../assets/game/sprites/fighter-turbo-attack0.png";
+import fighterTurboAttackKickUrl from "../assets/game/sprites/fighter-turbo-attackkick.png";
+import fighterTurboHurtUrl from "../assets/game/sprites/fighter-turbo-hurt.png";
+import fighterTurboJumpUrl from "../assets/game/sprites/fighter-turbo-jump.png";
+import fighterTurboDuckUrl from "../assets/game/sprites/fighter-turbo-duck.png";
+import fighterTurboWalk0Url from "../assets/game/sprites/fighter-turbo-walk0.png";
+import fighterTurboWalk1Url from "../assets/game/sprites/fighter-turbo-walk1.png";
+import fighterTitanIdleUrl from "../assets/game/sprites/fighter-titan-idle.png";
+import fighterTitanAttack0Url from "../assets/game/sprites/fighter-titan-attack0.png";
+import fighterTitanAttackKickUrl from "../assets/game/sprites/fighter-titan-attackkick.png";
+import fighterTitanHurtUrl from "../assets/game/sprites/fighter-titan-hurt.png";
+import fighterTitanJumpUrl from "../assets/game/sprites/fighter-titan-jump.png";
+import fighterTitanDuckUrl from "../assets/game/sprites/fighter-titan-duck.png";
+import fighterTitanWalk0Url from "../assets/game/sprites/fighter-titan-walk0.png";
+import fighterTitanWalk1Url from "../assets/game/sprites/fighter-titan-walk1.png";
+// Bunker tile for Star Defender (replaces the flat filled-rect bunker cells)
+// and a second, bulkier ship design promoted to "boss" so it doesn't share
+// a silhouette with the player's ship.
+import bunkerCrateUrl from "../assets/game/sprites/bunker-crate.png";
+import bossShipUrl from "../assets/game/sprites/boss-ship.png";
+
 function loadImage(url: string): HTMLImageElement {
   const img = new Image();
   img.src = url;
@@ -107,6 +146,32 @@ export const SPRITES = {
   cloud1: loadImage(cloud1Url),
   cloud2: loadImage(cloud2Url),
   startLights: loadImage(startLightsUrl),
+  fighterBlazeIdle: loadImage(fighterBlazeIdleUrl),
+  fighterBlazeAttack0: loadImage(fighterBlazeAttack0Url),
+  fighterBlazeAttackKick: loadImage(fighterBlazeAttackKickUrl),
+  fighterBlazeHurt: loadImage(fighterBlazeHurtUrl),
+  fighterBlazeJump: loadImage(fighterBlazeJumpUrl),
+  fighterBlazeDuck: loadImage(fighterBlazeDuckUrl),
+  fighterBlazeWalk0: loadImage(fighterBlazeWalk0Url),
+  fighterBlazeWalk1: loadImage(fighterBlazeWalk1Url),
+  fighterTurboIdle: loadImage(fighterTurboIdleUrl),
+  fighterTurboAttack0: loadImage(fighterTurboAttack0Url),
+  fighterTurboAttackKick: loadImage(fighterTurboAttackKickUrl),
+  fighterTurboHurt: loadImage(fighterTurboHurtUrl),
+  fighterTurboJump: loadImage(fighterTurboJumpUrl),
+  fighterTurboDuck: loadImage(fighterTurboDuckUrl),
+  fighterTurboWalk0: loadImage(fighterTurboWalk0Url),
+  fighterTurboWalk1: loadImage(fighterTurboWalk1Url),
+  fighterTitanIdle: loadImage(fighterTitanIdleUrl),
+  fighterTitanAttack0: loadImage(fighterTitanAttack0Url),
+  fighterTitanAttackKick: loadImage(fighterTitanAttackKickUrl),
+  fighterTitanHurt: loadImage(fighterTitanHurtUrl),
+  fighterTitanJump: loadImage(fighterTitanJumpUrl),
+  fighterTitanDuck: loadImage(fighterTitanDuckUrl),
+  fighterTitanWalk0: loadImage(fighterTitanWalk0Url),
+  fighterTitanWalk1: loadImage(fighterTitanWalk1Url),
+  bunkerCrate: loadImage(bunkerCrateUrl),
+  bossShip: loadImage(bossShipUrl),
 };
 
 // The soccer character art is drawn facing right (+X, i.e. 0 radians in
@@ -142,6 +207,69 @@ export const ROADSIDE_SPRITES = [
 ];
 
 export const CLOUD_SPRITES = [SPRITES.cloud1, SPRITES.cloud2];
+
+// Rumble Ring's per-character pose set, keyed by CharacterDef.id
+// (src/games/fighter/engine.ts). Every character has the same pose
+// vocabulary so the fighter component can look up "this character's idle
+// frame" generically without a character-specific switch statement. Facing
+// convention: all poses face RIGHT at rest, same as PLAYER_SPRITE_FACING
+// above — mirror horizontally (negative scale) for a character facing left.
+export interface FighterPoseSet {
+  idle: HTMLImageElement;
+  punch: HTMLImageElement;
+  kick: HTMLImageElement;
+  hurt: HTMLImageElement;
+  jump: HTMLImageElement;
+  duck: HTMLImageElement;
+  walk: [HTMLImageElement, HTMLImageElement];
+}
+
+export const FIGHTER_SPRITES: Record<string, FighterPoseSet> = {
+  blaze: {
+    idle: SPRITES.fighterBlazeIdle,
+    punch: SPRITES.fighterBlazeAttack0,
+    kick: SPRITES.fighterBlazeAttackKick,
+    hurt: SPRITES.fighterBlazeHurt,
+    jump: SPRITES.fighterBlazeJump,
+    duck: SPRITES.fighterBlazeDuck,
+    walk: [SPRITES.fighterBlazeWalk0, SPRITES.fighterBlazeWalk1],
+  },
+  turbo: {
+    idle: SPRITES.fighterTurboIdle,
+    punch: SPRITES.fighterTurboAttack0,
+    kick: SPRITES.fighterTurboAttackKick,
+    hurt: SPRITES.fighterTurboHurt,
+    jump: SPRITES.fighterTurboJump,
+    duck: SPRITES.fighterTurboDuck,
+    walk: [SPRITES.fighterTurboWalk0, SPRITES.fighterTurboWalk1],
+  },
+  titan: {
+    idle: SPRITES.fighterTitanIdle,
+    punch: SPRITES.fighterTitanAttack0,
+    kick: SPRITES.fighterTitanAttackKick,
+    hurt: SPRITES.fighterTitanHurt,
+    jump: SPRITES.fighterTitanJump,
+    duck: SPRITES.fighterTitanDuck,
+    walk: [SPRITES.fighterTitanWalk0, SPRITES.fighterTitanWalk1],
+  },
+};
+
+// A pose set is only usable once every frame in it has loaded — checking
+// just one frame could flash a mix of real art and fallback shapes across
+// a single character mid-match, which would look broken rather than
+// gracefully degraded.
+export function fighterPoseSetReady(poses: FighterPoseSet): boolean {
+  return (
+    isReady(poses.idle) &&
+    isReady(poses.punch) &&
+    isReady(poses.kick) &&
+    isReady(poses.hurt) &&
+    isReady(poses.jump) &&
+    isReady(poses.duck) &&
+    isReady(poses.walk[0]) &&
+    isReady(poses.walk[1])
+  );
+}
 
 // Cycles through the 4 distinct Munch Maze ghost sprites by index so each
 // ghost keeps a stable, recognizable look across frames (classic Pac-Man

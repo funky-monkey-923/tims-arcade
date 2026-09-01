@@ -1,8 +1,10 @@
 // All CanvasRenderingContext2D calls for Turbo Dash live here — the "UI"
 // half's rendering concern, kept separate from engine.ts's game rules.
 
-import { drawShadow, SPRITES, isReady, OBSTACLE_CAR_SPRITES } from "../../lib/sprites";
+import { drawShadow, SPRITES, isReady, OBSTACLE_CAR_SPRITES, RIVAL_CAR_SPRITES, ROADSIDE_SPRITES } from "../../lib/sprites";
 import { LANES, NITRO_COOLDOWN, laneX, getPlayerPosition, type RacingState } from "./engine";
+import { ParticleField, ScreenShake } from "../../lib/particles";
+import { drawLabel, drawBanner, drawOutlinedText } from "../../lib/canvasText";
 
 // Screen pixels per unit of distance-gap between the player and an AI
 // racer. Tuned so racers within roughly a second's worth of pace
@@ -11,6 +13,44 @@ import { LANES, NITRO_COOLDOWN, laneX, getPlayerPosition, type RacingState } fro
 // bigger gaps push them off-screen into the edge "radar ping" indicator.
 const AI_GAP_SCALE = 0.4;
 
+// Mirrors engine.ts's private LAP_BANNER_MS (not exported — render.ts has no
+// business importing gameplay constants it doesn't need, but it does need
+// this one duration to animate the banner it's told to show). Keep in sync
+// if the engine's value ever changes.
+const LAP_BANNER_MS = 2000;
+
+// Cosmetic-only module state — screen shake/particles are pure visual
+// flourish with no gameplay meaning (see lib/particles.ts's file comment),
+// so they live here rather than in RacingState. GameShell fully unmounts
+// this component between playthroughs, but this module itself does not get
+// re-imported, so resetEffects() (called by TurboDash.tsx whenever a fresh
+// race starts) is what actually clears the slate between races.
+const particles = new ParticleField();
+const shake = new ScreenShake();
+let lastFrameTs = 0;
+
+/** Called by TurboDash.tsx whenever a new race's state is created. */
+export function resetEffects(): void {
+  particles.clear();
+  shake.clear();
+  lastFrameTs = 0;
+}
+
+/** Crash impact: sparks + heavier debris + a short, sharp shake. */
+export function onCrash(x: number, y: number): void {
+  particles.sparks(x, y);
+  particles.debris(x, y);
+  shake.trigger(10, 260);
+}
+
+/** Nitro activation: an extra burst on top of the continuous flame trail
+ * drawn every frame nitro is active (see the trail spawn in `draw` below),
+ * plus a small punch of shake so the boost has weight. */
+export function onNitro(x: number, y: number): void {
+  particles.sparks(x, y, 14);
+  shake.trigger(4, 120);
+}
+
 function ordinal(n: number): string {
   if (n === 1) return "1st";
   if (n === 2) return "2nd";
@@ -18,11 +58,182 @@ function ordinal(n: number): string {
   return `${n}th`;
 }
 
+// --- Roadside scenery ---------------------------------------------------
+// Purely cosmetic, purely a function of state.distance (which already
+// advances by state.speed once per tick, exactly like state.obstacles' `y`
+// and state.roadOffset — see engine.ts) — so scenery scrolls in lockstep
+// with the road and obstacles with no extra state of its own to track,
+// spawn, or despawn. Each "slot" is spaced `SCENERY_SPACING` distance-units
+// apart along an infinite, implicit world line; which slots are currently
+// on-screen is recomputed fresh every frame from state.distance.
+const SCENERY_SPACING_FACTOR = 0.6; // * height
+// Multiplier used to scramble the ROADSIDE_SPRITES index per slot so the
+// shoulder doesn't read as a fixed short-period repeat (a plain `k % len`
+// would visibly cycle every `len` slots) — an arbitrary odd stride through
+// the small sprite array, offset per side so left/right don't mirror.
+const SCENERY_STRIDE = 5;
+
+function drawSceneryItem(ctx: CanvasRenderingContext2D, sprite: HTMLImageElement, cx: number, groundY: number, maxW: number): void {
+  if (!isReady(sprite)) return;
+  const aspect = sprite.naturalHeight / sprite.naturalWidth;
+  const w = maxW;
+  const h = w * aspect;
+  drawShadow(ctx, cx, groundY + h * 0.05, w * 0.9);
+  ctx.drawImage(sprite, cx - w / 2, groundY - h, w, h);
+}
+
+function drawShoulderScenery(ctx: CanvasRenderingContext2D, state: RacingState, width: number, height: number, margin: number): void {
+  const spacing = height * SCENERY_SPACING_FACTOR;
+  const kCenter = -state.distance / spacing;
+  const kMin = Math.floor(kCenter - height / spacing - 1);
+  const kMax = Math.ceil(kCenter + 1);
+  const itemW = Math.max(18, margin * 0.85);
+
+  for (let k = kMin; k <= kMax; k++) {
+    const y = state.distance + k * spacing;
+    if (y < -120 || y > height + 40) continue;
+
+    const leftIdx = Math.abs(k * SCENERY_STRIDE) % ROADSIDE_SPRITES.length;
+    drawSceneryItem(ctx, ROADSIDE_SPRITES[leftIdx], margin * 0.5, y, itemW);
+
+    const rightIdx = Math.abs(k * SCENERY_STRIDE + 3) % ROADSIDE_SPRITES.length;
+    drawSceneryItem(ctx, ROADSIDE_SPRITES[rightIdx], width - margin * 0.5, y, itemW);
+  }
+}
+
+// --- Sky parallax ---------------------------------------------------------
+// A slow-drifting cloud band across the top of the canvas. Driven off
+// state.distance (not the raw rAF timestamp) so it freezes correctly
+// whenever the race itself is frozen (paused, countdown, finished) rather
+// than continuing to drift as pure decoration while everything else holds.
+const SKY_DRIFT_FACTOR = 0.02; // slower than the road/scenery for a depth cue
+
+function drawSky(ctx: CanvasRenderingContext2D, state: RacingState, width: number, height: number): void {
+  const bandH = height * 0.09;
+  const grd = ctx.createLinearGradient(0, 0, 0, bandH);
+  grd.addColorStop(0, "#0d0726");
+  grd.addColorStop(1, "#241a52");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, width, bandH);
+
+  const wrap = width + 220;
+  const drift = state.distance * SKY_DRIFT_FACTOR;
+  const clouds: { sprite: HTMLImageElement; w: number; y: number; phase: number }[] = [
+    { sprite: SPRITES.cloud1, w: width * 0.26, y: bandH * 0.32, phase: 0 },
+    { sprite: SPRITES.cloud2, w: width * 0.2, y: bandH * 0.62, phase: wrap * 0.5 },
+  ];
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, width, bandH);
+  ctx.clip();
+  for (const c of clouds) {
+    if (!isReady(c.sprite)) continue;
+    const aspect = c.sprite.naturalHeight / c.sprite.naturalWidth;
+    const x = (((c.phase - drift) % wrap) + wrap) % wrap - 200;
+    ctx.globalAlpha = 0.75;
+    ctx.drawImage(c.sprite, x, c.y - (c.w * aspect) / 2, c.w, c.w * aspect);
+  }
+  ctx.restore();
+}
+
+// --- Start-light countdown ------------------------------------------------
+// Purely presentational — owned/sequenced by TurboDash.tsx (a useState
+// phase + timers, see that file), which just tells us how many lights are
+// lit each frame. No engine involvement: the race's step() loop simply
+// doesn't run until TurboDash.tsx flips to "racing".
+export interface StartLightPhase {
+  litCount: number; // 0..3 red lights lit so far
+  go: boolean; // true once it's lights-out/green
+}
+
+const START_LIGHT_COUNT = 3;
+
+export function drawStartLights(ctx: CanvasRenderingContext2D, width: number, height: number, phase: StartLightPhase): void {
+  ctx.save();
+  ctx.fillStyle = "rgba(13,7,38,0.55)";
+  ctx.fillRect(0, 0, width, height);
+
+  const gantryW = Math.min(width * 0.6, 220);
+  const gantryH = gantryW * (SPRITES.startLights.naturalHeight / Math.max(1, SPRITES.startLights.naturalWidth) || 0.4);
+  const gx = width / 2 - gantryW / 2;
+  const gy = height * 0.32 - gantryH / 2;
+  if (isReady(SPRITES.startLights)) {
+    ctx.drawImage(SPRITES.startLights, gx, gy, gantryW, gantryH);
+  } else {
+    ctx.fillStyle = "#2b2b38";
+    ctx.fillRect(gx, gy, gantryW, gantryH);
+  }
+
+  // Lights themselves are drawn as an overlay row of circles rather than
+  // baked into the (static) gantry sprite, since the sprite has no separate
+  // per-light frames to swap between — this is what actually animates.
+  const lightR = gantryW * 0.07;
+  const lightY = gy + gantryH * 0.55;
+  const gap = gantryW / (START_LIGHT_COUNT + 1);
+  for (let i = 0; i < START_LIGHT_COUNT; i++) {
+    const lx = gx + gap * (i + 1);
+    const lit = !phase.go && i < phase.litCount;
+    ctx.beginPath();
+    ctx.arc(lx, lightY, lightR, 0, Math.PI * 2);
+    ctx.fillStyle = phase.go ? "rgba(139,255,86,0.25)" : lit ? "#ff4d8d" : "rgba(255,255,255,0.12)";
+    ctx.fill();
+    if (lit || phase.go) {
+      ctx.save();
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = phase.go ? "#8bff56" : "#ff4d8d";
+      ctx.beginPath();
+      ctx.arc(lx, lightY, lightR * 0.7, 0, Math.PI * 2);
+      ctx.fillStyle = phase.go ? "#8bff56" : "#ff4d8d";
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // Text cue pairing the light color with words, same accessibility
+  // precedent as the existing NITRO labels: the state is never color-only.
+  drawOutlinedText(ctx, phase.go ? "GO!" : "GET READY", width / 2, height * 0.5, {
+    size: phase.go ? 40 : 24,
+    fill: phase.go ? "#8bff56" : "#f5f5ff",
+    outline: "#150c33",
+    outlineWidth: 4,
+  });
+  ctx.restore();
+}
+
 export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: number, width: number, height: number): void {
   const carW = width / LANES - 24;
   const carH = height * 0.11;
 
+  const dt = lastFrameTs ? Math.min(200, ts - lastFrameTs) : 16.7;
+  lastFrameTs = ts;
+  particles.update(dt);
+  shake.update(dt);
+
+  // Horizontal margin reserved for roadside scenery, as a fraction of the
+  // canvas width. Rather than recomputing every lane/obstacle/car x
+  // coordinate to fit inside a narrower track, the whole "road" layer below
+  // is drawn through a matching scale+translate transform — every existing
+  // coordinate (laneX(width, ...), state.x, o.y, etc., all derived from the
+  // same `width` engine.ts was given) still lines up perfectly, just
+  // uniformly compressed and shifted right to make room on each side. Only
+  // pixels move; no gameplay math changes.
+  const margin = width * 0.11;
+  const roadScale = (width - margin * 2) / width;
+
   ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#1a1140";
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.save();
+  shake.apply(ctx);
+
+  drawSky(ctx, state, width, height);
+  drawShoulderScenery(ctx, state, width, height, margin);
+
+  ctx.save();
+  ctx.translate(margin, 0);
+  ctx.scale(roadScale, 1);
+
   ctx.fillStyle = "#2b2b38";
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#150c33";
@@ -56,20 +267,27 @@ export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: numb
   });
 
   const carY = height * 0.78;
-  state.aiRacers.forEach((ai) => {
+  state.aiRacers.forEach((ai, i) => {
     const ax = laneX(width, ai.lane);
     const gap = ai.distance - state.distance; // positive = ahead of player
     const ay = carY - gap * AI_GAP_SCALE;
     if (ay > -carH && ay < height + carH) {
       drawShadow(ctx, ax, ay + carH / 2 - 2, carW * 1.1);
-      ctx.fillStyle = ai.color;
-      ctx.beginPath();
-      ctx.roundRect(ax - carW / 2, ay - carH / 2, carW, carH, 8);
-      ctx.fill();
+      const sprite = RIVAL_CAR_SPRITES[i % RIVAL_CAR_SPRITES.length];
+      if (isReady(sprite)) {
+        ctx.drawImage(sprite, ax - carW / 2, ay - carH / 2, carW, carH);
+      } else {
+        ctx.fillStyle = ai.color;
+        ctx.beginPath();
+        ctx.roundRect(ax - carW / 2, ay - carH / 2, carW, carH, 8);
+        ctx.fill();
+      }
     } else {
       // Off-screen "radar ping": a small triangle pinned to the edge the
       // racer is off toward, plus their name, so the player still has
-      // positional awareness of someone they can't currently see.
+      // positional awareness of someone they can't currently see. Kept as a
+      // shape (not just a color dot) — this is the accessibility-relevant
+      // cue this game already had, restyled but not removed.
       const atTop = gap > 0;
       const edgeY = atTop ? 30 : height - 18;
       ctx.fillStyle = ai.color;
@@ -85,18 +303,19 @@ export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: numb
       }
       ctx.closePath();
       ctx.fill();
-      ctx.font = "bold 10px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(ai.name, ax, atTop ? edgeY + 18 : edgeY - 11);
+      drawLabel(ctx, ai.name, ax, atTop ? edgeY + 18 : edgeY - 11, { align: "center", size: 11 });
     }
   });
 
   const nitroActive = ts < state.nitroUntil;
-  if (nitroActive && isReady(SPRITES.smoke)) {
-    const smokeSize = carW * 1.3;
-    ctx.globalAlpha = 0.7;
-    ctx.drawImage(SPRITES.smoke, state.x - smokeSize / 2, height * 0.78 + carH * 0.3, smokeSize, smokeSize);
-    ctx.globalAlpha = 1;
+  if (nitroActive) {
+    // Continuous flame trail behind the player car — spawned every frame
+    // nitro is active (see onNitro() above for the one-shot activation
+    // burst). Two colors interleaved so the trail reads as fire rather than
+    // a single flat-colored smear.
+    const flameY = height * 0.78 + carH * 0.42;
+    particles.trail(state.x - carW * 0.15, flameY, "#ffd43b", 2);
+    particles.trail(state.x + carW * 0.15, flameY, "#ff9e3d", 2);
   }
   drawShadow(ctx, state.x, height * 0.78 + carH / 2 - 2, carW * 1.1);
   if (nitroActive) {
@@ -121,49 +340,43 @@ export function draw(ctx: CanvasRenderingContext2D, state: RacingState, ts: numb
     ctx.fill();
   }
 
-  ctx.font = "bold 14px sans-serif";
-  ctx.fillStyle = "#f5f5ff";
-  ctx.textAlign = "left";
-  ctx.fillText(`${Math.round(state.speed * 20)} mph`, 10, 20);
-  // Nitro state is otherwise shown via color (gold tint) + smoke — add a
-  // text label here too, matching the "charging…"/"ready!" labels already
+  // Particles are drawn in the same (scaled/translated) road space they were
+  // spawned in, so the flame trail/sparks/debris scroll and sit exactly
+  // where the car and crash actually are.
+  particles.draw(ctx);
+
+  ctx.restore(); // road transform
+  ctx.restore(); // shake — HUD text below stays put even while the world shakes
+
+  drawLabel(ctx, `${Math.round(state.speed * 20)} mph`, 10, 22, { size: 15 });
+  // Nitro state is otherwise shown via color (gold tint) + flame trail — add
+  // a text label here too, matching the "charging…"/"ready!" labels already
   // shown the rest of the time, so the state is legible without relying on
   // color at all.
-  ctx.textAlign = "right";
   if (nitroActive) {
-    ctx.fillText("NITRO!", width - 10, 20);
+    drawLabel(ctx, "NITRO!", width - 10, 22, { align: "right", size: 15, fill: "#ffd43b" });
   } else if (ts - state.lastNitroAt < NITRO_COOLDOWN) {
-    ctx.fillText("nitro charging…", width - 10, 20);
+    drawLabel(ctx, "nitro charging…", width - 10, 22, { align: "right", size: 13 });
   } else {
-    ctx.fillText("nitro ready!", width - 10, 20);
+    drawLabel(ctx, "nitro ready!", width - 10, 22, { align: "right", size: 13, fill: "#8bff56" });
   }
 
-  ctx.textAlign = "left";
-  ctx.fillText(`LAP ${Math.min(state.lap, state.totalLaps)}/${state.totalLaps}`, 10, 40);
-  ctx.textAlign = "right";
-  ctx.fillText(`${ordinal(getPlayerPosition(state))} place`, width - 10, 40);
+  drawLabel(ctx, `LAP ${Math.min(state.lap, state.totalLaps)}/${state.totalLaps}`, 10, 42, { size: 15 });
+  drawLabel(ctx, `${ordinal(getPlayerPosition(state))} place`, width - 10, 42, { align: "right", size: 15 });
 
   if (ts < state.lapBannerUntil) {
-    // Same fade idiom used elsewhere in this codebase (e.g. invaders'
-    // explosion fade): alpha = remaining/duration, present-then-gone.
-    const remaining = state.lapBannerUntil - ts;
-    ctx.globalAlpha = Math.max(0, Math.min(1, remaining / 2000));
-    ctx.font = "bold 28px sans-serif";
-    ctx.fillStyle = "#ffd43b";
-    ctx.textAlign = "center";
-    ctx.fillText(`LAP ${state.lapBannerLap} of ${state.totalLaps}!`, width / 2, height / 2);
-    ctx.globalAlpha = 1;
+    const progress = 1 - (state.lapBannerUntil - ts) / LAP_BANNER_MS;
+    drawBanner(ctx, `LAP ${state.lapBannerLap} of ${state.totalLaps}!`, width / 2, height / 2, progress);
   }
 
   if (state.finished || state.dnf) {
-    ctx.font = "bold 24px sans-serif";
-    ctx.textAlign = "center";
     if (state.finished) {
-      ctx.fillStyle = "#2ee6d6";
-      ctx.fillText(`Finished — ${ordinal(getPlayerPosition(state))} place!`, width / 2, height / 2);
+      drawBanner(ctx, `Finished — ${ordinal(getPlayerPosition(state))} place!`, width / 2, height / 2, 1, {
+        fill: "#2ee6d6",
+        size: 26,
+      });
     } else {
-      ctx.fillStyle = "#ff4d8d";
-      ctx.fillText("DNF — too many crashes", width / 2, height / 2);
+      drawBanner(ctx, "DNF — too many crashes", width / 2, height / 2, 1, { fill: "#ff4d8d", size: 24 });
     }
   }
 }
